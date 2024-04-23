@@ -12,15 +12,16 @@ def read_requirements(filename):
     return read(PROJECT_ROOT, filename).splitlines()
 
 
-setup(name='triton-dejavu',
+setup(name='triton_dejavu',
       use_scm_version=True,
       description="Framework to try to reduce overhead to (close to) 0 for well known deployments.",
       long_description=read(PROJECT_ROOT, 'README.md'),
       long_description_content_type="text/markdown",
       author="Burkhard Ringlein",
       python_requires='>=3.8',
-      packages=find_packages('triton_dejavu'),
-      package_dir={'': 'triton_dejavu'},
+      # packages=find_packages('triton_dejavu'),
+      packages=['triton_dejavu'],
+      # package_dir={'': 'triton_dejavu'},
       include_package_data=True)
 
 
