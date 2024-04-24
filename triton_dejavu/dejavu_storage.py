@@ -119,7 +119,8 @@ class DejavuStorage:
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
         if fn_hash not in self.fn_storage:
-            cache_json = {'signature': _get_str_signature(fn.src)}
+            # cache_json = {'signature': _get_str_signature(fn.src)}
+            cache_json = {'signature': str(fn)}
         else:
             cache_json = self.fn_storage[fn_hash]
         changes_made = False

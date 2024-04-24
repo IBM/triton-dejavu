@@ -4,6 +4,7 @@ import builtins
 import os
 import time
 from typing import Dict
+import itertools
 
 from triton.testing import do_bench
 from triton import KernelInterface, Config, OutOfResources
@@ -255,3 +256,46 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
 
     return decorator
 
+
+class ConfigSpace:
+    """
+    An object that represents the space of possible kernel configuration for the auto-tuner to try.
+    Details of arguments please see in triton.Config
+    """
+
+    # TODO: specify skip_configs? e.g. if it would cause a segfault?
+    def __init__(self, kwargs_with_lists, num_warps=None, num_stages=None, num_ctas=None, enable_warp_specialization=None, pre_hook=None):
+        if num_warps is None:
+            num_warps = [4]
+        if num_stages is None:
+            num_stages = [2]
+        if num_ctas is None:
+            num_ctas = [1]
+        if enable_warp_specialization is None:
+            enable_warp_specialization = [False]
+        self.kwargs = kwargs_with_lists
+        self.num_warps = num_warps
+        self.num_ctas = num_ctas
+        self.num_stages = num_stages
+        self.enable_warp_specialization = enable_warp_specialization
+        # TODO[shuhaoj]: May make enable_persistent configurable in future if necessary.
+        self.enable_persistent = False
+        self.pre_hook = pre_hook
+
+    def __str__(self):
+        res = []
+        for k, v in self.kwargs.items():
+            res.append(f"{k}: {v}")
+        res.append(f"num_warps: {self.num_warps}")
+        res.append(f"num_ctas: {self.num_ctas}")
+        res.append(f"num_stages: {self.num_stages}")
+        res.append(f"enable_warp_specialization: {self.enable_warp_specialization}")
+        res.append(f"enable_persistent: {self.enable_persistent}")
+        return "ConfigSpace: " + ", ".join(res)
+
+    def generate_config_list(self): 
+        # first generate cross product of kwargs
+        # then cross product with all others
+        # then cross product with all others
+        kwarg_lists = []
+        # use itertools.product(*kwargs_list)
