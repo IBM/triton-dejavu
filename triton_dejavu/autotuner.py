@@ -11,6 +11,8 @@ from triton import KernelInterface, Config, OutOfResources
 from triton import __version__ as triton_version
 assert triton_version == '2.2.0'
 
+from triton_dejavu.dejavu_storage import global_dejavu_storage
+
 
 class Autotuner(KernelInterface):
 
@@ -37,7 +39,8 @@ class Autotuner(KernelInterface):
         else:
             self.configs = configs
         self.key_idx = [arg_names.index(k) for k in key]
-        self.cache = {}
+        # self.cache = {}
+        self.cache = global_dejavu_storage.restore_autotuner_cache(fn)
         self.arg_names = arg_names
 
         # Reset to zero or restore values
@@ -141,6 +144,7 @@ class Autotuner(KernelInterface):
         else:
             config = self.configs[0]
         self.best_config = config
+        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
