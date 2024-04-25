@@ -145,7 +145,7 @@ class DejavuStorage:
             cache_json = self.fn_storage[folder_name]
         changes_made = False
         for key, config in cache.items():
-            if str(key) in cache_json:
+            if str(key) in cache_json['cache']:
                 continue
             cache_json['cache'][str(key)] = str(config)
             changes_made = True
