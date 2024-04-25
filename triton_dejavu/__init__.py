@@ -1,8 +1,7 @@
 
-__version__ = '0.0.1'
+__version__ = '0.1.0'
 
 
-# from .autotuner import autotune, heuristics
-from .autotuner import autotune
+from .autotuner import autotune, ConfigSpace
 
 

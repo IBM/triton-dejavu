@@ -108,21 +108,23 @@ class DejavuStorage:
        self.fn_storage = {}
 
     def __store__(self):
-        for fn_hash in self.fn_storage:
-            os.system(f"mkdir -p {self.storage_path}/{fn_hash}/")
-            with open(f"{self.storage_path}/{fn_hash}/cache.json", 'w') as f:
-                json.dump(self.fn_storage[fn_hash], f)
+        for folder_name in self.fn_storage:
+            os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
+            with open(f"{self.storage_path}/{folder_name}/cache.json", 'w') as f:
+                json.dump(self.fn_storage[folder_name], f)
 
 
     def add_autotuner_cache(self, cache, fn):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
+        fn_name = str(fn).split(":")[1][:-1]
+        folder_name = f"{fn_name}-{fn_hash}"
         if fn_hash not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
             cache_json = {'signature': str(fn)}
         else:
-            cache_json = self.fn_storage[fn_hash]
+            cache_json = self.fn_storage[folder_name]
         changes_made = False
         for key, config in cache.items():
             if str(key) in cache_json:
@@ -132,7 +134,7 @@ class DejavuStorage:
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] added {str(config)} for {fn_hash}")
         if changes_made:
-            self.fn_storage[fn_hash] = cache_json
+            self.fn_storage[folder_name] = cache_json
             self.__store__()
 
     def restore_autotuner_cache(self, fn):
@@ -140,12 +142,14 @@ class DejavuStorage:
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
         # print(fn_hash)
-        cache_file = f"{self.storage_path}/{fn_hash}/cache.json"
+        fn_name = str(fn).split(":")[1][:-1]
+        folder_name = f"{fn_name}-{fn_hash}"
+        cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
             return {}
         with open(cache_file, 'r') as f:
             cache_json = json.load(f)
-        self.fn_storage[fn_hash] = cache_json
+        self.fn_storage[folder_name] = cache_json
         ret = {}
         for k, v in cache_json.items():
             if k == 'signature':
@@ -157,10 +161,6 @@ class DejavuStorage:
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
         return ret
-
-
-
-
 
 
 global_dejavu_storage = DejavuStorage()
