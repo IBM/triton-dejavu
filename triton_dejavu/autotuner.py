@@ -273,7 +273,7 @@ class ConfigSpace:
     """
 
     # TODO: specify skip_configs? e.g. if it would cause a segfault?
-    def __init__(self, kwargs_with_lists, num_warps=None, num_stages=None, num_ctas=None, enable_warp_specialization=None, pre_hook=None):
+    def __init__(self, kwargs_with_lists, num_warps=None, num_stages=None, num_ctas=None, enable_warp_specialization=None, pre_hook=None, kwarg_conditions=None):
         if num_warps is None:
             num_warps = [4]
         if num_stages is None:
@@ -288,6 +288,8 @@ class ConfigSpace:
                 num_ctas = [1]
         if enable_warp_specialization is None:
             enable_warp_specialization = [False]
+        if kwarg_conditions is None:
+            kwarg_conditions = []
         self.kwargs = kwargs_with_lists
         self.num_warps = num_warps
         self.num_ctas = num_ctas
@@ -296,6 +298,7 @@ class ConfigSpace:
         # TODO[shuhaoj]: May make enable_persistent configurable in future if necessary.
         self.enable_persistent = False
         self.pre_hook = pre_hook
+        self.kwarg_conditions = kwarg_conditions
 
     def __str__(self):
         res = []
@@ -313,10 +316,19 @@ class ConfigSpace:
         ks = list(self.kwargs.keys())
         vs = list(self.kwargs.values())
         vs_product = list(itertools.product(*vs))
-        kwarg_lists = []
+        kwarg_lists_complete = []
         for cur_combination in vs_product:
             nd = dict(zip(ks, cur_combination))
-            kwarg_lists.append(nd)
+            kwarg_lists_complete.append(nd)
+        # check for conditions
+        kwarg_lists = []
+        for kwarg in kwarg_lists_complete:
+            append = True
+            for condition in self.kwarg_conditions:
+                if not condition(kwarg): 
+                    append = False
+            if append:
+                kwarg_lists.append(kwarg)
         # then cross product with all others
         config_product = list(itertools.product(self.num_warps, self.num_ctas, self.num_stages, self.enable_warp_specialization))
         all_product = list(itertools.product(kwarg_lists, config_product))
