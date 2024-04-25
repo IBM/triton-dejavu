@@ -94,6 +94,24 @@ def _get_src_hash(src):
     return hashlib.sha256(src.encode('utf-8')).hexdigest()
 
 
+def _get_folder_name(fn_name, fn_hash, configs_hash):
+    return f"{fn_name}-{fn_hash}-{configs_hash}"
+
+
+def get_config_list_hash(configs):
+    # s = str(configs).encode('utf-8')
+    # need to be the same hash between different program runs, so can't use "object at..."
+    # sorted_configs = configs.sort()
+    # order of config list should be the same if come from ConfigSpace
+    # if manual, then can't be guaranteed
+    #  (but may not matter in practice, since then also the source code may has changed?)
+    s = '|'
+    for c in configs:
+        s += f"{c}|"
+    h = hashlib.sha256(s.encode('utf-8')).hexdigest()
+    return h
+
+
 class DejavuStorage:
 
     def __init__(self) -> None:
@@ -114,12 +132,12 @@ class DejavuStorage:
                 json.dump(self.fn_storage[folder_name], f)
 
 
-    def add_autotuner_cache(self, cache, fn):
+    def add_autotuner_cache(self, cache, fn, configs_hash):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = f"{fn_name}-{fn_hash}"
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
         if fn_hash not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
             cache_json = {'signature': str(fn)}
@@ -137,13 +155,13 @@ class DejavuStorage:
             self.fn_storage[folder_name] = cache_json
             self.__store__()
 
-    def restore_autotuner_cache(self, fn):
+    def restore_autotuner_cache(self, fn, configs_hash):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
         # print(fn_hash)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = f"{fn_name}-{fn_hash}"
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
             return {}
