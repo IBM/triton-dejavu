@@ -127,6 +127,7 @@ class Autotuner(KernelInterface):
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
         used_cached_result = True
+        self.bench_time = 0.0
         if len(self.configs) > 1:
             all_args = {**self.nargs, **kwargs}
             _args = []

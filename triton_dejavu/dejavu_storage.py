@@ -138,7 +138,7 @@ class DejavuStorage:
         fn_hash = _get_src_hash(fn.src)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
-        if fn_hash not in self.fn_storage:
+        if folder_name not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
             cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'cache': {}}
         else:
