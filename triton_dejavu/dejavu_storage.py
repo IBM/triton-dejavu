@@ -132,7 +132,7 @@ class DejavuStorage:
                 json.dump(self.fn_storage[folder_name], f)
 
 
-    def add_autotuner_cache(self, cache, fn, configs_hash):
+    def add_autotuner_cache(self, cache, fn, configs_hash, bench_time=0.0):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
@@ -140,18 +140,19 @@ class DejavuStorage:
         folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
         if fn_hash not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
-            cache_json = {'signature': str(fn)}
+            cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'cache': {}}
         else:
             cache_json = self.fn_storage[folder_name]
         changes_made = False
         for key, config in cache.items():
             if str(key) in cache_json:
                 continue
-            cache_json[str(key)] = str(config)
+            cache_json['cache'][str(key)] = str(config)
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] added {str(config)} for {fn_hash}")
         if changes_made:
+            cache_json['total_bench_time_s'] += bench_time
             self.fn_storage[folder_name] = cache_json
             self.__store__()
 
@@ -169,9 +170,10 @@ class DejavuStorage:
             cache_json = json.load(f)
         self.fn_storage[folder_name] = cache_json
         ret = {}
-        for k, v in cache_json.items():
-            if k == 'signature':
-                continue
+        # for k, v in cache_json.items():
+        #     if k in ['signature', 'total_bench_time_s']:
+        #         continue
+        for k, v in cache_json['cache'].items():
             kt = _create_tuple(k)
             va = _create_config_args(v)
             c = triton.Config(**va)

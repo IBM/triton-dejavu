@@ -153,7 +153,7 @@ class Autotuner(KernelInterface):
         else:
             config = self.configs[0]
         self.best_config = config
-        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash)
+        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, bench_time=self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
