@@ -280,6 +280,12 @@ class ConfigSpace:
             num_stages = [2]
         if num_ctas is None:
             num_ctas = [1]
+        else:
+            # check if other ctas are allowed
+            import torch
+            capability = torch.cuda.get_device_capability()
+            if capability[0] < 9:
+                num_ctas = [1]
         if enable_warp_specialization is None:
             enable_warp_specialization = [False]
         self.kwargs = kwargs_with_lists
