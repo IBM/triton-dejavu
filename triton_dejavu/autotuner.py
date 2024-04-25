@@ -28,6 +28,7 @@ class Autotuner(KernelInterface):
         prune_configs_by: Dict = None,
         warmup=25,
         rep=100,
+        config_space: ConfigSpace = None,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -35,10 +36,16 @@ class Autotuner(KernelInterface):
             'top_k': number of configs to bench
             'prune_num_stages_by'(optional): a function used to prune num_stages. It takes configs:List[Config] as its input, and returns pruned configs.
         """
-        if not configs:
-            self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
+        if config_space:
+            self.config_space = config_space
+            assert not configs, "can't configure configs and config_space"
+            self.configs = self.config_space.generate_config_list()
         else:
-            self.configs = configs
+            self.config_space = None
+            if not configs:
+                self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
+            else:
+                self.configs = configs
         self.key_idx = [arg_names.index(k) for k in key]
         # self.cache = {}
         self.cache = global_dejavu_storage.restore_autotuner_cache(fn)
@@ -206,8 +213,8 @@ class Autotuner(KernelInterface):
         self.nargs = None
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
-             print_autotune_stats=False):
+def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
+             print_autotune_stats=False, config_space=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -252,7 +259,7 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep, config_space)
 
     return decorator
 
@@ -295,7 +302,22 @@ class ConfigSpace:
 
     def generate_config_list(self): 
         # first generate cross product of kwargs
-        # then cross product with all others
-        # then cross product with all others
+        ks = list(self.kwargs.keys())
+        vs = list(self.kwargs.values())
+        vs_product = list(itertools.product(*vs))
         kwarg_lists = []
-        # use itertools.product(*kwargs_list)
+        for cur_combination in vs_product:
+            nd = dict(zip(ks, cur_combination))
+            kwarg_lists.append(nd)
+        # then cross product with all others
+        config_product = list(itertools.product(self.num_warps, self.num_ctas, self.num_stages, self.enable_warp_specialization))
+        all_product = list(itertools.product(kwarg_lists, config_product))
+        config_list = []
+        for cc in all_product:
+            # don't forget self.pre_hook
+            nc = Config(cc[0], num_warps=cc[1][0], num_ctas=cc[1][1], num_stages=cc[1][2], enable_warp_specialization=cc[1][3], pre_hook=self.pre_hook)
+            config_list.append(nc)
+        if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
+            print(f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}.")
+        return config_list
+
