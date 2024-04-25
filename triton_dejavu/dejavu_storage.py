@@ -121,14 +121,19 @@ class DejavuStorage:
        self.cuda_version = _get_cuda_version()
        self.gpu_name = torch.cuda.get_device_name().replace(' ', '_')
        self.triton_version = triton.__version__
-       self.storage_path = os.path.abspath(f"{self.storage_prefix}/dejavu_{dejavu_version}/{self.cuda_version}/{self.triton_version}/{self.gpu_name}")
+       self.storage_identifier = f"dejavu_{dejavu_version}/{self.cuda_version}/{self.triton_version}/{self.gpu_name}"
+       self.storage_path = os.path.abspath(f"{self.storage_prefix}/{self.storage_identifier}/")
        os.system(f"mkdir -p {self.storage_path}")
        self.fn_storage = {}
+       self._known_files = []
 
     def __store__(self):
         for folder_name in self.fn_storage:
             os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
-            with open(f"{self.storage_path}/{folder_name}/cache.json", 'w') as f:
+            file_name = f"{self.storage_path}/{folder_name}/cache.json"
+            if file_name not in self._known_files:
+                self._known_files.append(file_name)
+            with open(file_name, 'w') as f:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
 
 
@@ -166,6 +171,8 @@ class DejavuStorage:
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
             return {}
+        if cache_file not in self._known_files:
+            self._known_files.append(cache_file)
         with open(cache_file, 'r') as f:
             cache_json = json.load(f)
         self.fn_storage[folder_name] = cache_json
@@ -181,6 +188,10 @@ class DejavuStorage:
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
         return ret
+    
+    def dump_storage(self):
+        print(f"DejavuStorage: {self.storage_identifier}")
+        print(json.dumps(self.fn_storage, indent=4))
 
 
 global_dejavu_storage = DejavuStorage()
