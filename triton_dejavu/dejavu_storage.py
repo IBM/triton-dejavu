@@ -49,10 +49,14 @@ def _create_tuple(k):
             ei = int(e)
             ret.append(ei)
         except ValueError:
-            if type(e) == str:  # and e[1:-1][:6] == 'torch.':
-                ret.append(e[1:-1])
-            else:
-                ret.append(e)
+            try:
+                eb = bool(e)
+                ret.append(eb)
+            except ValueError:
+                if type(e) == str:  # and e[1:-1][:6] == 'torch.':
+                    ret.append(e[1:-1])
+                else:
+                    ret.append(e)
     ret_t = tuple(ret)
     return ret_t
 
