@@ -129,7 +129,7 @@ class DejavuStorage:
         for folder_name in self.fn_storage:
             os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
             with open(f"{self.storage_path}/{folder_name}/cache.json", 'w') as f:
-                json.dump(self.fn_storage[folder_name], f)
+                json.dump(self.fn_storage[folder_name], f, indent=4)
 
 
     def add_autotuner_cache(self, cache, fn, configs_hash, bench_time=0.0):
