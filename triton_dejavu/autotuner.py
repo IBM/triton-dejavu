@@ -26,8 +26,8 @@ class Autotuner(KernelInterface):
         reset_to_zero,
         restore_value,
         prune_configs_by: Dict = None,
-        warmup=25,
-        rep=100,
+        warmup=5,
+        rep=10,
         config_space: ConfigSpace = None,
     ):
         """
