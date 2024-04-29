@@ -47,6 +47,7 @@ class Autotuner(KernelInterface):
             else:
                 self.configs = configs
         self.configs_hash = get_config_list_hash(self.configs)
+        self.configs_len = len(self.configs)
         self.key_idx = [arg_names.index(k) for k in key]
         # self.cache = {}
         self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash)
@@ -92,6 +93,7 @@ class Autotuner(KernelInterface):
         self.fn = fn
         self.warmup = warmup
         self.rep = rep
+        self._timings = {}
 
     def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -148,13 +150,15 @@ class Autotuner(KernelInterface):
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
+                self._timings[key] = timings[self.cache[key]]
                 self.pre_hook(args, reset_only=True)
                 self.configs_timings = timings
             config = self.cache[key]
         else:
             config = self.configs[0]
         self.best_config = config
-        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, bench_time=self.bench_time)
+        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
+                                                  self._timings, self.rep, self.warmup, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")

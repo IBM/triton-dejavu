@@ -50,13 +50,15 @@ def _create_tuple(k):
             ret.append(ei)
         except ValueError:
             try:
-                eb = bool(e)
-                ret.append(eb)
-            except ValueError:
-                if type(e) == str:  # and e[1:-1][:6] == 'torch.':
+                if type(e) == str and (e == 'True' or e == 'False'):
+                    eb = bool(e)
+                    ret.append(eb)
+                elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
                     ret.append(e[1:-1])
-                else:
-                    ret.append(e)
+                else: 
+                    raise ValueError
+            except ValueError:
+                ret.append(e)
     ret_t = tuple(ret)
     return ret_t
 
@@ -129,6 +131,7 @@ class DejavuStorage:
        self.storage_path = os.path.abspath(f"{self.storage_prefix}/{self.storage_identifier}/")
        os.system(f"mkdir -p {self.storage_path}")
        self.fn_storage = {}
+       self.measured_timings = {}
        self._known_files = []
 
     def __store__(self):
@@ -141,7 +144,7 @@ class DejavuStorage:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
 
 
-    def add_autotuner_cache(self, cache, fn, configs_hash, bench_time=0.0):
+    def add_autotuner_cache(self, cache, fn, configs_hash, configs_len, timings, repetitiont, warmupt, bench_time):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         fn_hash = _get_src_hash(fn.src)
@@ -149,7 +152,8 @@ class DejavuStorage:
         folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
         if folder_name not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
-            cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'cache': {}}
+            cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'evaluated_configs': configs_len, 
+                          'cache': {}, 'timings': {}}
         else:
             cache_json = self.fn_storage[folder_name]
         changes_made = False
@@ -157,6 +161,8 @@ class DejavuStorage:
             if str(key) in cache_json['cache']:
                 continue
             cache_json['cache'][str(key)] = str(config)
+            nt = {'values': timings[key], 'lables': ['ms', 'min_ms', 'max_ms'], 'rep_t_ms': repetitiont, 'warmup_t_ms': warmupt}
+            cache_json['timings'][str(key)] = nt
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] added {str(config)} for {fn_hash}")
@@ -193,9 +199,20 @@ class DejavuStorage:
                 print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
         return ret
     
-    def dump_storage(self):
+    def dump_storage(self, filter_timings=False):
         print(f"DejavuStorage: {self.storage_identifier}")
-        print(json.dumps(self.fn_storage, indent=4))
+        if filter_timings:
+            tmp_json = {}
+            for k,v in self.fn_storage.items():
+                tmp_d = {}
+                for kk, vv in v.items():
+                    if kk == 'timings':
+                        continue
+                    tmp_d[kk] = vv
+                tmp_json[k] = tmp_d
+            print(json.dumps(tmp_json, indent=4))
+        else:
+            print(json.dumps(self.fn_storage, indent=4))
 
 
 global_dejavu_storage = DejavuStorage()
