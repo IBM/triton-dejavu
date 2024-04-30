@@ -50,15 +50,19 @@ def _create_tuple(k):
             ret.append(ei)
         except ValueError:
             try:
-                if type(e) == str and (e == 'True' or e == 'False'):
-                    eb = bool(e)
-                    ret.append(eb)
-                elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
-                    ret.append(e[1:-1])
-                else: 
-                    raise ValueError
+                ef = float(e)
+                ret.append(ef)
             except ValueError:
-                ret.append(e)
+                try:
+                    if type(e) == str and (e == 'True' or e == 'False'):
+                        eb = bool(e)
+                        ret.append(eb)
+                    elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
+                        ret.append(e[1:-1])
+                    else: 
+                        raise ValueError
+                except ValueError:
+                    ret.append(e)
     ret_t = tuple(ret)
     return ret_t
 
@@ -160,8 +164,10 @@ class DejavuStorage:
         for key, config in cache.items():
             if str(key) in cache_json['cache']:
                 continue
-            cache_json['cache'][str(key)] = str(config)
             nt = {'values': timings[key], 'lables': ['ms', 'min_ms', 'max_ms'], 'rep_t_ms': repetitiont, 'warmup_t_ms': warmupt}
+            if float('inf') in nt['values']:
+                continue
+            cache_json['cache'][str(key)] = str(config)
             cache_json['timings'][str(key)] = nt
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
