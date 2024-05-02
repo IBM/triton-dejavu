@@ -5,6 +5,7 @@ import os
 import time
 from typing import Dict
 import itertools
+import torch
 
 from triton.testing import do_bench
 from triton import KernelInterface, Config, OutOfResources
@@ -91,11 +92,11 @@ class Autotuner(KernelInterface):
             self.early_config_prune = prune_configs_by.get("early_config_prune", self.early_config_prune)
 
         self.fn = fn
-        self.warmup = warmup
-        self.rep = rep
+        self.num_warmups = warmup
+        self.num_reps = rep
         self._timings = {}
 
-    def _bench(self, *args, config, **meta):
+    def _bench(self, *args, config, just_jit=False, **meta):
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -122,12 +123,39 @@ class Autotuner(KernelInterface):
             self.post_hook(args)
 
         try:
-            return do_bench(kernel_call, warmup=self.warmup, rep=self.rep, quantiles=(0.5, 0.2, 0.8))
+            # time.sleep(self.warmup*0.00001)
+            if just_jit:
+                return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
+            else:
+                # time.sleep(self.num_reps/1000)
+                torch.cuda.empty_cache()
+                return do_bench(kernel_call, warmup=self.num_warmups, rep=self.num_reps, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
         except OutOfResources:
             return [float("inf"), float("inf"), float("inf")]
         except AssertionError as e:
             print(f"ERROR: {e}")
             return [float("inf"), float("inf"), float("inf")]
+    
+    def _create_timings(self, *args, configs, **kwargs):
+        # call all once to get JIT out of the way??
+        # configs = configs[:100]
+        # first_timings = {}
+        # for config in configs:
+        #     times = self._bench(*args, config=config, just_jit=True, **kwargs)
+        #     first_timings[config] = times
+        timings = {}
+        translated_timings = {}
+        cur_experiment = 0
+        for config in configs:
+            times = self._bench(*args, config=config, **kwargs)
+            timings[config] = times
+            translated_timings[str(config)] = times
+            cur_experiment += 1
+            if cur_experiment % 100 == 0:
+                torch.cuda.empty_cache()
+                time.sleep(0.1)
+        # print(list(timings.values()))
+        return timings 
 
 
     def run(self, *args, **kwargs):
@@ -150,7 +178,8 @@ class Autotuner(KernelInterface):
                 used_cached_result = False
                 pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
-                timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
+                # timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
+                timings = self._create_timings(*args, configs=pruned_configs, **kwargs)
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
@@ -162,7 +191,7 @@ class Autotuner(KernelInterface):
             config = self.configs[0]
         self.best_config = config
         global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
-                                                  self._timings, self.rep, self.warmup, self.bench_time)
+                                                  self._timings, self.num_reps, self.num_warmups, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
