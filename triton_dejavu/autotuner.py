@@ -28,7 +28,7 @@ class Autotuner(KernelInterface):
         restore_value,
         prune_configs_by: Dict = None,
         warmup=25,
-        rep=100,
+        rep=500,
         config_space: ConfigSpace = None,
     ):
         """
@@ -61,6 +61,9 @@ class Autotuner(KernelInterface):
         self.restore_idx = []
         if restore_value is not None:
             self.restore_idx = [arg_names.index(k) for k in restore_value]
+        # TODO: trying to fix the autotuner strangeness...
+        # self.reset_idx = [arg_names.index(k) for k in arg_names]
+        self.restore_idx = [arg_names.index(k) for k in arg_names if isinstance(k, torch.Tensor)]
 
         # Hook to reset or restore for required tensors
         self.pre_hook = lambda args, reset_only=False: 0
@@ -92,11 +95,11 @@ class Autotuner(KernelInterface):
             self.early_config_prune = prune_configs_by.get("early_config_prune", self.early_config_prune)
 
         self.fn = fn
-        self.num_warmups = warmup
-        self.num_reps = rep
+        self.warmup_t = warmup
+        self.rep_t = rep
         self._timings = {}
 
-    def _bench(self, *args, config, just_jit=False, **meta):
+    def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -127,9 +130,9 @@ class Autotuner(KernelInterface):
             if just_jit:
                 return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
             else:
-                # time.sleep(self.num_reps/1000)
+                # time.sleep(self.rep_t/1000)
                 torch.cuda.empty_cache()
-                return do_bench(kernel_call, warmup=self.num_warmups, rep=self.num_reps, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
+                return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
         except OutOfResources:
             return [float("inf"), float("inf"), float("inf")]
         except AssertionError as e:
@@ -153,6 +156,7 @@ class Autotuner(KernelInterface):
             cur_experiment += 1
             if cur_experiment % 100 == 0:
                 torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
                 time.sleep(0.1)
         # print(list(timings.values()))
         return timings 
@@ -191,7 +195,7 @@ class Autotuner(KernelInterface):
             config = self.configs[0]
         self.best_config = config
         global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
-                                                  self._timings, self.num_reps, self.num_warmups, self.bench_time)
+                                                  self._timings, self.rep_t, self.warmup_t, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
@@ -293,7 +297,7 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     :type restore_value: list[str]
     :param warmup: Warmup time (in ms) to pass to benchmarking, defaults to 25.
     :type warmup: int
-    :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 100.
+    :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 500.
     :type rep: int
     """
 
