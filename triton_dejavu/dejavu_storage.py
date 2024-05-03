@@ -9,31 +9,10 @@ import time
 import asyncio
 
 from triton_dejavu import __version__ as dejavu_version
+from .dejavu_utilities import get_storage_identifier
 
 
 __storage_env_var__ = 'TRITON_DEJAVU_STORAGE'
-
-
-def _get_cuda_version():
-    """Get the CUDA version from nvcc.
-
-    Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
-    """
-    try:
-        from torch.utils.cpp_extension import CUDA_HOME
-        import subprocess
-        nvcc_output = subprocess.check_output([CUDA_HOME + "/bin/nvcc", "-V"],
-                                              universal_newlines=True)
-        output = nvcc_output.split()
-        release_idx = output.index("release") + 1
-        nvcc_cuda_version = output[release_idx].split(",")[0]
-        cuda_version = nvcc_cuda_version
-    except Exception as e:
-        print(f"[INFO] determining cuda version failed with: {e}")
-        cuda_version = os.environ.get('VLLM_CUDA_VERSION', 'unkown')
-        if cuda_version == 'unkown':
-            raise Exception("Can't determine cuda version and also VLLM_CUDA_VERSION is not set")
-    return cuda_version
 
 
 def _get_str_signature(fn_src):
@@ -153,10 +132,7 @@ class DejavuStorage:
        self.storage_prefix =  os.environ.get(__storage_env_var__, 'none')
        if self.storage_prefix == 'none':
            raise Exception(f'The environment variable {__storage_env_var__} must be set for triton-dejavu!')
-       self.cuda_version = _get_cuda_version()
-       self.gpu_name = torch.cuda.get_device_name().replace(' ', '_')
-       self.triton_version = triton.__version__
-       self.storage_identifier = f"dejavu_{dejavu_version}/{self.cuda_version}/{self.triton_version}/{self.gpu_name}"
+       self.storage_identifier = get_storage_identifier()
        self.storage_path = os.path.abspath(f"{self.storage_prefix}/{self.storage_identifier}/")
        os.system(f"mkdir -p {self.storage_path}")
        self.fn_storage = {}
