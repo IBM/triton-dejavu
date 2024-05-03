@@ -188,20 +188,26 @@ class Autotuner(KernelInterface):
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self._timings[key] = timings[self.cache[key]]
-                self.pre_hook(args, reset_only=True)
                 self.configs_timings = timings
+                # self.pre_hook(args, reset_only=True)
+                # here, instead of later
+                config = self.cache[key]
+                full_nargs = {**self.nargs, **kwargs, **config.kwargs}
+                self.pre_hook(full_nargs)
             config = self.cache[key]
         else:
             config = self.configs[0]
         self.best_config = config
-        global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
+        if not used_cached_result:
+            global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
                                                   self._timings, self.rep_t, self.warmup_t, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.fn} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
-        full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
-        if config.pre_hook is not None:
-            config.pre_hook(full_nargs)
+        # TODO, why again??
+        # full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
+        # if config.pre_hook is not None:
+        #     config.pre_hook(full_nargs)
         ret = self.fn.run(
             *args,
             num_warps=config.num_warps,
