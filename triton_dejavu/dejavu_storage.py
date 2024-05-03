@@ -123,6 +123,8 @@ def get_config_list_hash(configs):
     for c in configs:
         s += f"{c}|"
     h = hashlib.sha256(s.encode('utf-8')).hexdigest()
+    # triton jit uses sha1?
+    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
@@ -210,7 +212,7 @@ class DejavuStorage:
         return ret
     
     def dump_storage(self, filter_timings=False):
-        print(f"DejavuStorage: {self.storage_identifier}")
+        print(f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}")
         if filter_timings:
             tmp_json = {}
             for k,v in self.fn_storage.items():
