@@ -5,6 +5,8 @@ import json
 import torch
 import triton
 import hashlib
+import time
+import asyncio
 
 from triton_dejavu import __version__ as dejavu_version
 
@@ -104,6 +106,29 @@ def _get_src_hash(src):
     return hashlib.sha256(src.encode('utf-8')).hexdigest()
 
 
+async def _get_fn_hash(fn):
+    wait_start = time.time()
+    # trigger JIT
+    test = fn.cache_key
+    while fn.hash is None:
+        # time.sleep(0.1)
+        await asyncio.sleep(0.1)
+    wait_end = time.time()
+    # if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
+    #     print(f"waited {wait_end-wait_start} for fn.hash")
+    fn_hash = fn.hash
+    return fn_hash
+
+
+def _wait_fn_hash(fn): 
+    loop = asyncio.new_event_loop() 
+    task = loop.create_task(_get_fn_hash(fn))
+    loop.run_until_complete(task)
+    fn_hash = task.result()
+    return fn_hash
+
+
+
 def _get_folder_name(fn_name, fn_hash, configs_hash):
     return f"{fn_name}-{fn_hash}-{configs_hash}"
 
@@ -151,7 +176,9 @@ class DejavuStorage:
     def add_autotuner_cache(self, cache, fn, configs_hash, configs_len, timings, repetitiont, warmupt, bench_time):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
-        fn_hash = _get_src_hash(fn.src)
+        # fn_hash = _get_src_hash(fn.src)
+        fn_hash = _wait_fn_hash(fn)
+        # fn_hash = await asyncio.gather(_wait_fn_hash(fn))
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
         if folder_name not in self.fn_storage:
@@ -179,8 +206,9 @@ class DejavuStorage:
 
     def restore_autotuner_cache(self, fn, configs_hash):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
-        # fn_hash = fn.hash
-        fn_hash = _get_src_hash(fn.src)
+        # fn_hash = _get_src_hash(fn.src)
+        # however, we need to consider dependencies as well, so we will wait for fn.hash
+        fn_hash = _wait_fn_hash(fn)
         # print(fn_hash)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
