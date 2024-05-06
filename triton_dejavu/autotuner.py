@@ -65,7 +65,7 @@ class Autotuner(KernelInterface):
             self.restore_idx = [arg_names.index(k) for k in restore_value]
         # TODO: trying to fix the autotuner strangeness...
         # self.reset_idx = [arg_names.index(k) for k in arg_names]
-        self.restore_idx = [arg_names.index(k) for k in arg_names if isinstance(k, torch.Tensor)]
+        # self.restore_idx = [arg_names.index(k) for k in arg_names if isinstance(k, torch.Tensor)]
 
         # Hook to reset or restore for required tensors
         self.pre_hook = lambda args, reset_only=False: 0
@@ -110,7 +110,8 @@ class Autotuner(KernelInterface):
             self.use_cuda_graph = False
             self.benchmarkig_stream = None
 
-    def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
+    # def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
+    def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -139,16 +140,15 @@ class Autotuner(KernelInterface):
         try:
             if triton_major_version >= 3 and self.use_cuda_graph:
                 with torch.cuda.stream(self.benchmarkig_stream):
-                    # TODO: median?
                     bench_res = do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
                 return bench_res
             # time.sleep(self.warmup*0.00001)
-            if just_jit:
-                return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
-            else:
-                # time.sleep(self.rep_t/1000)
-                torch.cuda.empty_cache()
-                return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
+            # if just_jit:
+            #     return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
+            # else:
+            #     # time.sleep(self.rep_t/1000)
+            #     torch.cuda.empty_cache()
+            return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
         except OutOfResources:
             return float("inf") if self.use_cuda_graph else [float("inf"), float("inf"), float("inf")]
         except AssertionError as e:
@@ -171,8 +171,9 @@ class Autotuner(KernelInterface):
             translated_timings[str(config)] = times
             cur_experiment += 1
             if cur_experiment % 100 == 0:
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
+                # torch.cuda.empty_cache()
+                # torch.cuda.ipc_collect()
+                # TODO: still necessary?
                 time.sleep(0.1)
         # print(list(timings.values()))
         return timings 
