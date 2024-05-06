@@ -28,8 +28,8 @@ class Autotuner(KernelInterface):
         reset_to_zero,
         restore_value,
         prune_configs_by: Dict = None,
-        warmup=25,
-        rep=500,
+        warmup=5,
+        rep=50,
         config_space: ConfigSpace = None,
         use_cuda_graph=False,
     ):
