@@ -169,7 +169,11 @@ class DejavuStorage:
         for key, config in cache.items():
             if str(key) in cache_json['cache']:
                 continue
-            nt = {'values': timings[key], 'lables': ['ms', 'min_ms', 'max_ms'], 'rep_t_ms': repetitiont, 'warmup_t_ms': warmupt}
+            # compatability with cuda stream feature of triton 3
+            vals = timings[key]
+            if type(vals) is not list:
+                vals = [vals]
+            nt = {'values': vals, 'lables': ['ms', 'min_ms', 'max_ms'], 'rep_t_ms': repetitiont, 'warmup_t_ms': warmupt}
             if float('inf') in nt['values']:
                 continue
             cache_json['cache'][str(key)] = str(config)

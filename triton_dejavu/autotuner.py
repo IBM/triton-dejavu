@@ -126,15 +126,25 @@ class Autotuner(KernelInterface):
             if config.pre_hook:
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
-            self.fn.run(
-                *args,
-                num_warps=config.num_warps,
-                num_stages=config.num_stages,
-                num_ctas=config.num_ctas,
-                enable_warp_specialization=config.enable_warp_specialization,
-                # enable_persistent=False,
-                **current,
-            )
+            if triton_major_version >= 3:
+                self.fn.run(
+                    *args,
+                    num_warps=config.num_warps,
+                    num_stages=config.num_stages,
+                    num_ctas=config.num_ctas,
+                    # enable_persistent=False,
+                    **current,
+                )
+            else:
+                self.fn.run(
+                    *args,
+                    num_warps=config.num_warps,
+                    num_stages=config.num_stages,
+                    num_ctas=config.num_ctas,
+                    enable_warp_specialization=config.enable_warp_specialization,
+                    # enable_persistent=False,
+                    **current,
+                )
             self.post_hook(args)
 
         try:
@@ -315,7 +325,7 @@ class Autotuner(KernelInterface):
         return ret
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100, 
+def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100, 
              use_cuda_graph=False, print_autotune_stats=False, config_space=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -387,7 +397,7 @@ class ConfigSpace:
             capability = torch.cuda.get_device_capability()
             if capability[0] < 9:
                 num_ctas = [1]
-        if enable_warp_specialization is None:
+        if enable_warp_specialization is None or triton_major_version >= 3:
             enable_warp_specialization = [False]
         if kwarg_conditions is None:
             kwarg_conditions = []
@@ -397,7 +407,7 @@ class ConfigSpace:
         self.num_stages = num_stages
         self.enable_warp_specialization = enable_warp_specialization
         # TODO[shuhaoj]: May make enable_persistent configurable in future if necessary.
-        self.enable_persistent = False
+        # self.enable_persistent = False
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
 
@@ -408,8 +418,9 @@ class ConfigSpace:
         res.append(f"num_warps: {self.num_warps}")
         res.append(f"num_ctas: {self.num_ctas}")
         res.append(f"num_stages: {self.num_stages}")
-        res.append(f"enable_warp_specialization: {self.enable_warp_specialization}")
-        res.append(f"enable_persistent: {self.enable_persistent}")
+        if triton_major_version < 3:
+            res.append(f"enable_warp_specialization: {self.enable_warp_specialization}")
+        # res.append(f"enable_persistent: {self.enable_persistent}")
         return "ConfigSpace: " + ", ".join(res)
 
     def generate_config_list(self): 
@@ -431,12 +442,17 @@ class ConfigSpace:
             if append:
                 kwarg_lists.append(kwarg)
         # then cross product with all others
-        config_product = list(itertools.product(self.num_warps, self.num_ctas, self.num_stages, self.enable_warp_specialization))
+        if triton_major_version >= 3:
+            config_product = list(itertools.product(self.num_warps, self.num_ctas, self.num_stages))
+        else:
+            config_product = list(itertools.product(self.num_warps, self.num_ctas, self.num_stages, self.enable_warp_specialization))
         all_product = list(itertools.product(kwarg_lists, config_product))
         config_list = []
         for cc in all_product:
-            # don't forget self.pre_hook
-            nc = Config(cc[0], num_warps=cc[1][0], num_ctas=cc[1][1], num_stages=cc[1][2], enable_warp_specialization=cc[1][3], pre_hook=self.pre_hook)
+            if triton_major_version >= 3:
+                nc = Config(cc[0], num_warps=cc[1][0], num_ctas=cc[1][1], num_stages=cc[1][2], pre_hook=self.pre_hook)
+            else:
+                nc = Config(cc[0], num_warps=cc[1][0], num_ctas=cc[1][1], num_stages=cc[1][2], enable_warp_specialization=cc[1][3], pre_hook=self.pre_hook)
             config_list.append(nc)
         if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
             print(f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}.")
