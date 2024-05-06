@@ -8,11 +8,11 @@ from typing import Dict
 import itertools
 import torch
 
-from triton.testing import do_bench
+from triton.testing import do_bench, do_bench_cudagraph
 from triton import KernelInterface, Config, OutOfResources
 
 from triton import __version__ as triton_version
-assert triton_version == '2.2.0'
+triton_major_version = int(triton_version.split('.')[0])
 
 from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash
 
@@ -103,9 +103,12 @@ class Autotuner(KernelInterface):
         self.warmup_t = warmup
         self.rep_t = rep
         self._timings = {}
-        # TODO: only in 3
-        self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
-        self.benchmarkig_stream = torch.cuda.Stream() if self.use_cuda_graph else None
+        if triton_major_version >= 3:
+            self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
+            self.benchmarkig_stream = torch.cuda.Stream() if self.use_cuda_graph else None
+        else:
+            self.use_cuda_graph = False
+            self.benchmarkig_stream = None
 
     def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -134,7 +137,7 @@ class Autotuner(KernelInterface):
             self.post_hook(args)
 
         try:
-	    if self.use_cuda_graph:
+            if triton_major_version >= 3 and self.use_cuda_graph:
                 with torch.cuda.stream(self.benchmarkig_stream):
                     # TODO: median?
                     bench_res = do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
@@ -221,16 +224,25 @@ class Autotuner(KernelInterface):
         # full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         # if config.pre_hook is not None:
         #     config.pre_hook(full_nargs)
-        ret = self.fn.run(
-            *args,
-            num_warps=config.num_warps,
-            num_stages=config.num_stages,
-            num_ctas=config.num_ctas,
-            # TODO: case base? not in 3...
-            enable_warp_specialization=config.enable_warp_specialization,
-            **kwargs,
-            **config.kwargs,
-        )
+        if triton_major_version >= 3:
+            ret = self.fn.run(
+                *args,
+                num_warps=config.num_warps,
+                num_stages=config.num_stages,
+                num_ctas=config.num_ctas,
+                **kwargs,
+                **config.kwargs,
+            )
+        else:
+            ret = self.fn.run(
+                *args,
+                num_warps=config.num_warps,
+                num_stages=config.num_stages,
+                num_ctas=config.num_ctas,
+                enable_warp_specialization=config.enable_warp_specialization,
+                **kwargs,
+                **config.kwargs,
+            )
         self.nargs = None
         return ret
 
@@ -243,21 +255,32 @@ class Autotuner(KernelInterface):
             if isinstance(top_k, float) and top_k <= 1.0:
                 top_k = int(len(self.configs) * top_k)
             if len(pruned_configs) > top_k:
-                est_timing = {
-                    config:
-                    self.perf_model(
-                        **self.nargs,
-                        **kwargs,
-                        **config.kwargs,
-                        num_stages=config.num_stages,
-                        num_warps=config.num_warps,
-                        num_ctas=config.num_ctas,
-                        # TODO: not in 3
-                        enable_warp_specialization=config.enable_warp_specialization,
-                        enable_persistent=config.enable_persistent,
-                    )
-                    for config in pruned_configs
-                }
+                if triton_major_version >= 3:
+                    est_timing = {
+                        config:
+                        self.perf_model(
+                            **self.nargs,
+                            **kwargs,
+                            **config.kwargs,
+                            num_stages=config.num_stages,
+                            num_warps=config.num_warps,
+                            num_ctas=config.num_ctas,
+                        )
+                        for config in pruned_configs
+                    }
+                else:
+                    est_timing = {
+                        config:
+                        self.perf_model(
+                            **self.nargs,
+                            **kwargs,
+                            **config.kwargs,
+                            num_stages=config.num_stages,
+                            num_warps=config.num_warps,
+                            num_ctas=config.num_ctas,
+                        )
+                        for config in pruned_configs
+                    }
                 pruned_configs = sorted(est_timing.keys(), key=lambda x: est_timing[x])[:top_k]
         return pruned_configs
 
@@ -265,18 +288,28 @@ class Autotuner(KernelInterface):
         self.nargs = dict(zip(self.arg_names, args))
         ret = []
         for config in self.prune_configs(kwargs):
-            ret.append(
-                self.fn.warmup(
-                    *args,
-                    num_warps=config.num_warps,
-                    num_ctas=config.num_ctas,
-                    num_stages=config.num_stages,
-                    # TODO: not in 3
-                    enable_warp_specialization=config.enable_warp_specialization,
-                    enable_persistent=config.enable_persistent,
-                    **kwargs,
-                    **config.kwargs,
-                ))
+            if triton_major_version >= 3:
+                ret.append(
+                    self.fn.warmup(
+                        *args,
+                        num_warps=config.num_warps,
+                        num_ctas=config.num_ctas,
+                        num_stages=config.num_stages,
+                        **kwargs,
+                        **config.kwargs,
+                    ))
+            else:
+                ret.append(
+                    self.fn.warmup(
+                        *args,
+                        num_warps=config.num_warps,
+                        num_ctas=config.num_ctas,
+                        num_stages=config.num_stages,
+                        enable_warp_specialization=config.enable_warp_specialization,
+                        enable_persistent=config.enable_persistent,
+                        **kwargs,
+                        **config.kwargs,
+                    ))
         self.nargs = None
         return ret
 
