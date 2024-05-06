@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import os
 import time
+import inspect
 from typing import Dict
 import itertools
 import torch
@@ -30,6 +31,7 @@ class Autotuner(KernelInterface):
         warmup=25,
         rep=500,
         config_space: ConfigSpace = None,
+        use_cuda_graph=False,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -95,9 +97,15 @@ class Autotuner(KernelInterface):
             self.early_config_prune = prune_configs_by.get("early_config_prune", self.early_config_prune)
 
         self.fn = fn
+        self.base_fn = fn
+        while not inspect.isfunction(self.base_fn):
+            self.base_fn = self.base_fn.fn
         self.warmup_t = warmup
         self.rep_t = rep
         self._timings = {}
+        # TODO: only in 3
+        self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
+        self.benchmarkig_stream = torch.cuda.Stream() if self.use_cuda_graph else None
 
     def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -126,6 +134,11 @@ class Autotuner(KernelInterface):
             self.post_hook(args)
 
         try:
+	    if self.use_cuda_graph:
+                with torch.cuda.stream(self.benchmarkig_stream):
+                    # TODO: median?
+                    bench_res = do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
+                return bench_res
             # time.sleep(self.warmup*0.00001)
             if just_jit:
                 return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
@@ -134,7 +147,7 @@ class Autotuner(KernelInterface):
                 torch.cuda.empty_cache()
                 return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
         except OutOfResources:
-            return [float("inf"), float("inf"), float("inf")]
+            return float("inf") if self.use_cuda_graph else [float("inf"), float("inf"), float("inf")]
         except AssertionError as e:
             print(f"ERROR: {e}")
             return [float("inf"), float("inf"), float("inf")]
@@ -202,7 +215,7 @@ class Autotuner(KernelInterface):
             global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
                                                   self._timings, self.rep_t, self.warmup_t, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
-            print(f"Triton autotuning for function {self.fn} finished after "
+            print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
         # TODO, why again??
         # full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
@@ -213,6 +226,7 @@ class Autotuner(KernelInterface):
             num_warps=config.num_warps,
             num_stages=config.num_stages,
             num_ctas=config.num_ctas,
+            # TODO: case base? not in 3...
             enable_warp_specialization=config.enable_warp_specialization,
             **kwargs,
             **config.kwargs,
@@ -223,7 +237,7 @@ class Autotuner(KernelInterface):
     def prune_configs(self, kwargs):
         pruned_configs = self.configs
         if self.early_config_prune:
-            pruned_configs = self.early_config_prune(self.configs, self.nargs)
+            pruned_configs = self.early_config_prune(self.configs, self.nargs, **kwargs)
         if self.perf_model:
             top_k = self.configs_top_k
             if isinstance(top_k, float) and top_k <= 1.0:
@@ -238,6 +252,7 @@ class Autotuner(KernelInterface):
                         num_stages=config.num_stages,
                         num_warps=config.num_warps,
                         num_ctas=config.num_ctas,
+                        # TODO: not in 3
                         enable_warp_specialization=config.enable_warp_specialization,
                         enable_persistent=config.enable_persistent,
                     )
@@ -248,22 +263,26 @@ class Autotuner(KernelInterface):
 
     def warmup(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
+        ret = []
         for config in self.prune_configs(kwargs):
-            self.fn.warmup(
-                *args,
-                num_warps=config.num_warps,
-                num_ctas=config.num_ctas,
-                num_stages=config.num_stages,
-                enable_warp_specialization=config.enable_warp_specialization,
-                enable_persistent=config.enable_persistent,
-                **kwargs,
-                **config.kwargs,
-            )
+            ret.append(
+                self.fn.warmup(
+                    *args,
+                    num_warps=config.num_warps,
+                    num_ctas=config.num_ctas,
+                    num_stages=config.num_stages,
+                    # TODO: not in 3
+                    enable_warp_specialization=config.enable_warp_specialization,
+                    enable_persistent=config.enable_persistent,
+                    **kwargs,
+                    **config.kwargs,
+                ))
         self.nargs = None
+        return ret
 
 
-def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
-             print_autotune_stats=False, config_space=None):
+def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100, 
+             use_cuda_graph=False, print_autotune_stats=False, config_space=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -271,8 +290,8 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     .. code-block:: python
 
         @triton.autotune(configs=[
-            triton.Config(meta={'BLOCK_SIZE': 128}, num_warps=4),
-            triton.Config(meta={'BLOCK_SIZE': 1024}, num_warps=8),
+            triton.Config(kwargs={'BLOCK_SIZE': 128}, num_warps=4),
+            triton.Config(kwargs={'BLOCK_SIZE': 1024}, num_warps=8),
           ],
           key=['x_size'] # the two above configs will be evaluated anytime
                          # the value of x_size changes
@@ -308,7 +327,8 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep, config_space)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep, 
+                         config_space, use_cuda_graph)
 
     return decorator
 
