@@ -63,6 +63,7 @@ class Autotuner(KernelInterface):
         self.restore_idx = []
         if restore_value is not None:
             self.restore_idx = [arg_names.index(k) for k in restore_value]
+        self.restore_copies = []
         # TODO: trying to fix the autotuner strangeness...
         # self.reset_idx = [arg_names.index(k) for k in arg_names]
         # self.restore_idx = [arg_names.index(k) for k in arg_names if isinstance(k, torch.Tensor)]
@@ -216,11 +217,12 @@ class Autotuner(KernelInterface):
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self._timings[key] = timings[self.cache[key]]
                 self.configs_timings = timings
-                # self.pre_hook(args, reset_only=True)
+                # TODO
+                self.pre_hook(args, reset_only=True)
                 # here, instead of later
-                config = self.cache[key]
-                full_nargs = {**self.nargs, **kwargs, **config.kwargs}
-                self.pre_hook(full_nargs)
+                # config = self.cache[key]
+                # full_nargs = {**self.nargs, **kwargs, **config.kwargs}
+                # self.pre_hook(full_nargs)
             config = self.cache[key]
         else:
             config = self.configs[0]
@@ -232,9 +234,9 @@ class Autotuner(KernelInterface):
             print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
         # TODO, why again??
-        # full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
-        # if config.pre_hook is not None:
-        #     config.pre_hook(full_nargs)
+        full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
+        if config.pre_hook is not None:
+            config.pre_hook(full_nargs)
         if triton_major_version >= 3:
             ret = self.fn.run(
                 *args,
