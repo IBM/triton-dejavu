@@ -54,6 +54,10 @@ class Autotuner(KernelInterface):
         self.key_idx = [arg_names.index(k) for k in key]
         # self.cache = {}
         self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash)
+        if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", '0') == '1':
+            self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash)
+            if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
+                print(f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache.")
         self.arg_names = arg_names
 
         # Reset to zero or restore values

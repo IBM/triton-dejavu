@@ -140,6 +140,7 @@ class DejavuStorage:
        self.fn_storage = {}
        self.measured_timings = {}
        self._known_files = []
+       self.used_configs = {}
 
     def __store__(self):
         for folder_name in self.fn_storage:
@@ -149,7 +150,12 @@ class DejavuStorage:
                 self._known_files.append(file_name)
             with open(file_name, 'w') as f:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
-
+        for folder_name in self.used_configs:
+            os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
+            file_name = f"{self.storage_path}/{folder_name}/configs.json"
+            str_l = [str(c) for c in self.used_configs[folder_name]]
+            with open(file_name, 'w') as f:
+                json.dump(str_l, f, indent=4)
 
     def add_autotuner_cache(self, cache, fn, configs_hash, configs_len, timings, repetitiont, warmupt, bench_time):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
@@ -166,6 +172,7 @@ class DejavuStorage:
         else:
             cache_json = self.fn_storage[folder_name]
         changes_made = False
+        tmp_used_configs = []
         for key, config in cache.items():
             if str(key) in cache_json['cache']:
                 continue
@@ -178,12 +185,15 @@ class DejavuStorage:
                 continue
             cache_json['cache'][str(key)] = str(config)
             cache_json['timings'][str(key)] = nt
+            if config not in tmp_used_configs:
+                tmp_used_configs.append(config)
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] added {str(config)} for {fn_hash}")
         if changes_made:
             cache_json['total_bench_time_s'] += bench_time
             self.fn_storage[folder_name] = cache_json
+            self.used_configs[folder_name] = tmp_used_configs
             self.__store__()
 
     def restore_autotuner_cache(self, fn, configs_hash):
@@ -203,6 +213,7 @@ class DejavuStorage:
             cache_json = json.load(f)
         self.fn_storage[folder_name] = cache_json
         ret = {}
+        tmp_used_configs = []
         # for k, v in cache_json.items():
         #     if k in ['signature', 'total_bench_time_s']:
         #         continue
@@ -211,9 +222,19 @@ class DejavuStorage:
             va = _create_config_args(v)
             c = triton.Config(**va)
             ret[kt] = c
+            if c not in tmp_used_configs:
+                tmp_used_configs.append(c)
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
+        self.used_configs[folder_name] = tmp_used_configs
         return ret
+    
+    def get_used_configs(self, fn, configs_hash):
+        fn_hash = _wait_fn_hash(fn)
+        fn_name = str(fn).split(":")[1][:-1]
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
+        return self.used_configs[folder_name]
+
     
     def dump_storage(self, filter_timings=False):
         print(f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}")
