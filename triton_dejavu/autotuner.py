@@ -56,6 +56,7 @@ class Autotuner(KernelInterface):
         self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash)
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", '0') == '1':
             self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash)
+            # important, don't update configs_hash
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache.")
         self.arg_names = arg_names
@@ -89,6 +90,7 @@ class Autotuner(KernelInterface):
             def _post_hook(args):
                 for i, j in enumerate(self.restore_idx):
                     args[j].copy_(self.restore_copies[i])
+                del self.restore_copies  # to be sure...?
                 self.restore_copies = []
 
             self.post_hook = _post_hook
@@ -186,11 +188,14 @@ class Autotuner(KernelInterface):
             translated_timings[str(config)] = times
             cur_experiment += 1
             if cur_experiment % 100 == 0:
-                # torch.cuda.empty_cache()
+                # TODO: still necessary?
+                torch.cuda.empty_cache()
                 # torch.cuda.ipc_collect()
                 # TODO: still necessary?
                 time.sleep(0.1)
         # print(list(timings.values()))
+        # shrink memory leakage?
+        torch.cuda.empty_cache()
         return timings 
 
 
@@ -237,7 +242,6 @@ class Autotuner(KernelInterface):
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
-        # TODO, why again??
         full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         if config.pre_hook is not None:
             config.pre_hook(full_nargs)
@@ -370,9 +374,9 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     :type reset_to_zero: list[str]
     :param restore_value: a list of argument names whose value will be restored after evaluating any configs.
     :type restore_value: list[str]
-    :param warmup: Warmup time (in ms) to pass to benchmarking, defaults to 25.
+    :param warmup: Warmup time (in ms) to pass to benchmarking, defaults to 5.
     :type warmup: int
-    :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 500.
+    :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 50.
     :type rep: int
     """
 
