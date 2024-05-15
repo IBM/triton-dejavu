@@ -90,7 +90,8 @@ class Autotuner(KernelInterface):
             def _post_hook(args):
                 for i, j in enumerate(self.restore_idx):
                     args[j].copy_(self.restore_copies[i])
-                del self.restore_copies  # to be sure...?
+                # is apparently unrelated...
+                # del self.restore_copies  # to be sure...?
                 self.restore_copies = []
 
             self.post_hook = _post_hook
@@ -189,13 +190,14 @@ class Autotuner(KernelInterface):
             cur_experiment += 1
             if cur_experiment % 100 == 0:
                 # TODO: still necessary?
-                torch.cuda.empty_cache()
+                # torch.cuda.empty_cache()
                 # torch.cuda.ipc_collect()
                 # TODO: still necessary?
                 time.sleep(0.1)
         # print(list(timings.values()))
         # shrink memory leakage?
-        torch.cuda.empty_cache()
+        #  is apparently unrelated...
+        # torch.cuda.empty_cache()
         return timings 
 
 
