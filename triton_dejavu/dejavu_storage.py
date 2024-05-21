@@ -7,6 +7,7 @@ import triton
 import hashlib
 import time
 import asyncio
+from distutils.util import strtobool
 
 from triton_dejavu import __version__ as dejavu_version
 from .dejavu_utilities import get_storage_identifier
@@ -36,7 +37,7 @@ def _create_tuple(k):
             except ValueError:
                 try:
                     if type(e) == str and (e == 'True' or e == 'False'):
-                        eb = bool(e)
+                        eb = bool(strtobool(e))
                         ret.append(eb)
                     elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
                         ret.append(e[1:-1])
@@ -66,7 +67,7 @@ def _create_config_args(v):
             if sl[0] in __int_config_args__:
                 ret[sl[0]] = int(sl[1])
             elif sl[0] in __bool_config_args__:
-                ret[sl[0]] = bool(sl[1])
+                ret[sl[0]] = bool(strtobool(sl[1]))
             else:
                 ret[sl[0]] = sl[1]
         else:
@@ -74,7 +75,7 @@ def _create_config_args(v):
                 ret['kwargs'][sl[0]] = int(sl[1])
             except ValueError:
                 try:
-                    ret['kwargs'][sl[0]] = bool(sl[1])
+                    ret['kwargs'][sl[0]] = bool(strtobool(sl[1]))
                 except ValueError:
                     print(f"[triton-dejavu] WARNING: can't determine type of kwarg {sl[0]}: {sl[1]}")
                     ret['kwargs'][sl[0]] = sl[1]

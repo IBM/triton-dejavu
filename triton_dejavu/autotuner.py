@@ -449,6 +449,7 @@ class ConfigSpace:
         for kwarg in kwarg_lists_complete:
             append = True
             for condition in self.kwarg_conditions:
+                # global AND
                 if not condition(kwarg): 
                     append = False
             if append:
