@@ -14,7 +14,7 @@ from triton import KernelInterface, Config, OutOfResources
 from triton import __version__ as triton_version
 triton_major_version = int(triton_version.split('.')[0])
 
-from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash
+from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash, get_key_list_hash
 
 
 class Autotuner(KernelInterface):
@@ -50,12 +50,14 @@ class Autotuner(KernelInterface):
             else:
                 self.configs = configs
         self.configs_hash = get_config_list_hash(self.configs)
+        # the key hash is not covered by fn.hash!
+        self.key_hash = get_key_list_hash(key)
         self.configs_len = len(self.configs)
         self.key_idx = [arg_names.index(k) for k in key]
         # self.cache = {}
-        self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash)
+        self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash, self.key_hash)
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", '0') == '1':
-            self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash)
+            self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash, self.key_hash)
             # important, don't update configs_hash
             if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
                 print(f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache.")
@@ -239,7 +241,7 @@ class Autotuner(KernelInterface):
             config = self.configs[0]
         self.best_config = config
         if not used_cached_result:
-            global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.configs_len, 
+            global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.key_hash, self.configs_len, 
                                                   self._timings, self.rep_t, self.warmup_t, self.bench_time)
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.base_fn.__name__} finished after "

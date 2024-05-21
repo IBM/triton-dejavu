@@ -14,6 +14,9 @@ from .dejavu_utilities import get_storage_identifier
 
 
 __storage_env_var__ = 'TRITON_DEJAVU_STORAGE'
+__tag_env_var__ = 'TRITON_DEJAVU_TAG'
+__tag_default__ = 'default'
+storage_tag = os.environ.get(__tag_env_var__, __tag_default__)
 
 
 def _get_str_signature(fn_src):
@@ -109,8 +112,8 @@ def _wait_fn_hash(fn):
 
 
 
-def _get_folder_name(fn_name, fn_hash, configs_hash):
-    return f"{fn_name}-{fn_hash}-{configs_hash}"
+def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash):
+    return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}/{storage_tag}"
 
 
 def get_config_list_hash(configs):
@@ -123,6 +126,14 @@ def get_config_list_hash(configs):
     s = '|'
     for c in configs:
         s += f"{c}|"
+    h = hashlib.sha256(s.encode('utf-8')).hexdigest()
+    # triton jit uses sha1?
+    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
+    return h
+
+
+def get_key_list_hash(key):
+    s = '|'.join(key)
     h = hashlib.sha256(s.encode('utf-8')).hexdigest()
     # triton jit uses sha1?
     # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
@@ -153,19 +164,19 @@ class DejavuStorage:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
         for folder_name in self.used_configs:
             os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
-            file_name = f"{self.storage_path}/{folder_name}/configs.json"
+            file_name = f"{self.storage_path}/{folder_name}/used_configs.json"
             str_l = [str(c) for c in self.used_configs[folder_name]]
             with open(file_name, 'w') as f:
                 json.dump(str_l, f, indent=4)
 
-    def add_autotuner_cache(self, cache, fn, configs_hash, configs_len, timings, repetitiont, warmupt, bench_time):
+    def add_autotuner_cache(self, cache, fn, configs_hash, key_hash, configs_len, timings, repetitiont, warmupt, bench_time):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = fn.hash
         # fn_hash = _get_src_hash(fn.src)
         fn_hash = _wait_fn_hash(fn)
         # fn_hash = await asyncio.gather(_wait_fn_hash(fn))
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
         if folder_name not in self.fn_storage:
             # cache_json = {'signature': _get_str_signature(fn.src)}
             cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'evaluated_configs': configs_len, 
@@ -197,14 +208,14 @@ class DejavuStorage:
             self.used_configs[folder_name] = tmp_used_configs
             self.__store__()
 
-    def restore_autotuner_cache(self, fn, configs_hash):
+    def restore_autotuner_cache(self, fn, configs_hash, key_hash):
         # fn.hash is not always there (apparently race condition with @triton.jit decorator?)
         # fn_hash = _get_src_hash(fn.src)
         # however, we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _wait_fn_hash(fn)
         # print(fn_hash)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
             return {}
@@ -230,10 +241,10 @@ class DejavuStorage:
         self.used_configs[folder_name] = tmp_used_configs
         return ret
     
-    def get_used_configs(self, fn, configs_hash):
+    def get_used_configs(self, fn, configs_hash, key_hash):
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
         return self.used_configs[folder_name]
 
     
