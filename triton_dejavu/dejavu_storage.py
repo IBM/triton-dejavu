@@ -47,8 +47,9 @@ def _create_tuple(k):
 
 
 __int_config_args__ = ['num_warps', 'num_stages', 'num_ctas']
+__int_or_none_config_args__ = ['maxnreg']
 __bool_config_args__ = ['enable_warp_specialization']
-__config_args__ = ['pre_hook'] + __int_config_args__ + __bool_config_args__
+__config_args__ = ['pre_hook'] + __int_config_args__ + __bool_config_args__ + __int_or_none_config_args__
 __skip_config_args__ = ['enable_persistent']
 
 
@@ -64,6 +65,11 @@ def _create_config_args(v):
                 ret[sl[0]] = int(sl[1])
             elif sl[0] in __bool_config_args__:
                 ret[sl[0]] = bool(strtobool(sl[1]))
+            elif sl[0] in __int_or_none_config_args__:
+                try:
+                    ret[sl[0]] = int(sl[1])
+                except ValueError:
+                    ret[sl[0]] = None
             else:
                 ret[sl[0]] = sl[1]
         else:
@@ -157,10 +163,11 @@ class DejavuStorage:
         if folder_name not in self.fn_storage:
             cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'evaluated_configs': configs_len, 
                           'cache': {}, 'timings': {}}
+            tmp_used_configs = []
         else:
             cache_json = self.fn_storage[folder_name]
+            tmp_used_configs = self.used_configs[folder_name]
         changes_made = False
-        tmp_used_configs = self.used_configs[folder_name]
         for key, config in cache.items():
             if str(key) in cache_json['cache']:
                 continue

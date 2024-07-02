@@ -98,13 +98,12 @@ def test_rms_norm(
         if my_name not in pytest.global_pds:
             pytest.global_pds[my_name] = pd.DataFrame(columns=['num_tokens', 'hidden_size', 'dtype', 'device', 'max_value',
                                                                'ms', 'min_ms', 'max_ms', 'captured'])
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: layer(x, residual), quantiles=quantiles)
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: rmsnorm_triton_wrapper(x, layer_weights), quantiles=quantiles)
         nr = [num_tokens, hidden_size, dtype, device, max_value, ms, min_ms, max_ms, captured]
         pytest.global_pds[my_name].loc[len(pytest.global_pds[my_name])] = nr
     
     # cleanup memory
     del x
-    del residual
     del out
     del ref_out
     torch.cuda.empty_cache()
