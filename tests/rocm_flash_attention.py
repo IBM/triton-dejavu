@@ -264,8 +264,8 @@ gpu_name = torch.cuda.get_device_name()
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
         {
-            'BLOCK_M': [32, 64, 128, 256],
-            'BLOCK_N': [32, 64, 128, 256],
+            'BLOCK_M': [32, 64, 128],
+            'BLOCK_N': [32, 64, 128],
             'PRE_LOAD_V': [True, False]
         }, 
         kwarg_conditions = [lambda kwarg: kwarg['BLOCK_M'] >= kwarg['BLOCK_N'],
@@ -275,11 +275,11 @@ gpu_name = torch.cuda.get_device_name()
                            ],
         num_warps=[2, 4, 8],
         num_stages=[2, 4, 8],
-        num_ctas=[1],  # although supported by H100, it causes a segfault if >1
+        num_ctas=[1],  
         enable_warp_specialization=[False, True],  # for triton <3.0
     ),
-    # rep=10,
-    # warmup=5,
+    rep=10,
+    warmup=5,
     key=['hq', 'hk', 'IS_CAUSAL', 'dropout_p', 'BLOCK_DMODEL', 
         'stride_qz', 'stride_qh', 'stride_qm', 'stride_qk',
         'stride_kz', 'stride_kh', 'stride_kn', 'stride_kk',

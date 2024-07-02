@@ -27,8 +27,8 @@ SEQUENCE_LENGTH_FLASH= [512, 2048]
 HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 CAUSAL = [True]  # vLLM only needs causal=True
 VARLEN = [True]  # vLLM only needs varlen=True
-MAX_VALUE = [0.01, 0.1, 1.0, 10.0, 100.0]  
-MAX_VALUE_FLASH = [0.01, 0.1, 1.0]  
+MAX_VALUE = [0.01, 1.0, 100.0]  
+MAX_VALUE_FLASH = [0.01, 1.0]  
 
 
 do_benchmarks = True

@@ -12,12 +12,14 @@ import triton_dejavu
 # based on https://github.com/ELS-RD/kernl/blob/main/experimental/llama-v2/kernel/fused_kernel_ff.py
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
-        {'BLOCK_N_SIZE': [1024, 2048, 4096, 8192, 16384]},
-        num_warps=[4, 8, 16, 32],
-        num_stages=[1, 2, 4, 6, 8, 10],
+        {'BLOCK_N_SIZE': [1024, 2048, 4096]},
+        num_warps=[4, 8, 16],
+        num_stages=[1, 2, 4, 6],
         num_ctas=[1],
         enable_warp_specialization=[False, True]
     ),
+    rep=10,
+    warmup=5,
     key=['stride_x_batch', 'stride_x_m', 'stride_x_k', 'stride_rms_w', 
          'stride_out_batch', 'stride_out_m', 'stride_out_k',
          'N_SIZE'
