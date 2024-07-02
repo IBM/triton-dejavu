@@ -15,7 +15,7 @@ def read_requirements(filename):
 setup(name='triton_dejavu',
       use_scm_version=True,
       description="Framework to try to reduce overhead to (close to) 0 for well known deployments.",
-      long_description=read(PROJECT_ROOT, 'README.md'),
+      # long_description=read(PROJECT_ROOT, 'README.md'),
       long_description_content_type="text/markdown",
       author="Burkhard Ringlein",
       python_requires='>=3.8',

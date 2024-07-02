@@ -1,0 +1,14 @@
+cmake>=3.21
+ninja  # For faster builds.
+wheel
+numpy
+torch
+
+# testing
+pytest
+pandas
+pyarrow
+
+# debug
+debugpy
+
