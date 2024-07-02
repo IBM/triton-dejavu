@@ -27,11 +27,13 @@ class Autotuner(KernelInterface):
         key,
         reset_to_zero,
         restore_value,
+        pre_hook, 
+        post_hook,
         prune_configs_by: Dict = None,
         warmup=5,
         rep=50,
-        config_space: ConfigSpace = None,
         use_cuda_graph=False,
+        config_space: ConfigSpace = None,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -71,14 +73,13 @@ class Autotuner(KernelInterface):
         if restore_value is not None:
             self.restore_idx = [arg_names.index(k) for k in restore_value]
         self.restore_copies = []
-        # TODO: trying to fix the autotuner strangeness...
-        # self.reset_idx = [arg_names.index(k) for k in arg_names]
-        # self.restore_idx = [arg_names.index(k) for k in arg_names if isinstance(k, torch.Tensor)]
 
         # Hook to reset or restore for required tensors
         self.pre_hook = lambda args, reset_only=False: 0
         self.post_hook = lambda args: 0
-        if len(self.reset_idx) > 0 or len(self.restore_idx) > 0:
+        if pre_hook:
+            self.pre_hook = pre_hook
+        elif (len(self.reset_idx) > 0 or len(self.restore_idx) > 0):
 
             def _pre_hook(args, reset_only=False):
                 for i in self.reset_idx:
@@ -87,7 +88,10 @@ class Autotuner(KernelInterface):
                     self.restore_copies = [args[i].clone() for i in self.restore_idx]
 
             self.pre_hook = _pre_hook
-        if len(self.restore_idx) > 0:
+        
+        if post_hook:
+            self.post_hook = post_hook
+        elif len(self.restore_idx) > 0:
 
             def _post_hook(args):
                 for i, j in enumerate(self.restore_idx):
@@ -120,8 +124,10 @@ class Autotuner(KernelInterface):
             self.use_cuda_graph = False
             self.benchmarkig_stream = None
 
-    # def _bench(self, *args, config, just_jit=False, no_post_hook=False, **meta):
     def _bench(self, *args, config, **meta):
+        if triton_major_version >= 3:
+            from triton.compiler.errors import CompileTimeAssertionFailure
+        
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -139,10 +145,6 @@ class Autotuner(KernelInterface):
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
-                    num_warps=config.num_warps,
-                    num_stages=config.num_stages,
-                    num_ctas=config.num_ctas,
-                    # enable_persistent=False,
                     **current,
                 )
             else:
@@ -157,51 +159,26 @@ class Autotuner(KernelInterface):
                 )
             self.post_hook(args)
 
-        try:
-            if triton_major_version >= 3 and self.use_cuda_graph:
-                with torch.cuda.stream(self.benchmarkig_stream):
-                    bench_res = do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
-                return bench_res
-            # time.sleep(self.warmup*0.00001)
-            # if just_jit:
-            #     return do_bench(kernel_call, warmup=1, rep=1, quantiles=(0.5, 0.2, 0.8), fast_flush=True)
-            # else:
-            #     # time.sleep(self.rep_t/1000)
-            #     torch.cuda.empty_cache()
-            return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
-        except OutOfResources:
-            return float("inf") if self.use_cuda_graph else [float("inf"), float("inf"), float("inf")]
-        except AssertionError as e:
-            print(f"ERROR: {e}")
-            return [float("inf"), float("inf"), float("inf")]
-    
-    def _create_timings(self, *args, configs, **kwargs):
-        # call all once to get JIT out of the way??
-        # configs = configs[:100]
-        # first_timings = {}
-        # for config in configs:
-        #     times = self._bench(*args, config=config, just_jit=True, **kwargs)
-        #     first_timings[config] = times
-        timings = {}
-        translated_timings = {}
-        cur_experiment = 0
-        for config in configs:
-            times = self._bench(*args, config=config, **kwargs)
-            timings[config] = times
-            translated_timings[str(config)] = times
-            cur_experiment += 1
-            if cur_experiment % 100 == 0:
-                # TODO: still necessary?
-                # torch.cuda.empty_cache()
-                # torch.cuda.ipc_collect()
-                # TODO: still necessary?
-                time.sleep(0.1)
-        # print(list(timings.values()))
-        # shrink memory leakage?
-        #  is apparently unrelated...
-        # torch.cuda.empty_cache()
-        return timings 
-
+        if triton_major_version >= 3:
+            try:
+                if self.use_cuda_graph:
+                    with torch.cuda.stream(self.benchmarkig_stream):
+                        bench_res = do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
+                    return bench_res
+                return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
+            except (OutOfResources, CompileTimeAssertionFailure):
+                return float("inf") if self.use_cuda_graph else [float("inf"), float("inf"), float("inf")]
+            except AssertionError as e:
+                print(f"ERROR: {e}")
+                return float("inf") if self.use_cuda_graph else [float("inf"), float("inf"), float("inf")]
+        else:
+            try:
+                return do_bench(kernel_call, warmup=self.warmup_t, rep=self.rep_t, quantiles=(0.5, 0.2, 0.8), fast_flush=False)
+            except OutOfResources:
+                return [float("inf"), float("inf"), float("inf")]
+            except AssertionError as e:
+                print(f"ERROR: {e}")
+                return [float("inf"), float("inf"), float("inf")]
 
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
@@ -223,19 +200,13 @@ class Autotuner(KernelInterface):
                 used_cached_result = False
                 pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
-                # timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
-                timings = self._create_timings(*args, configs=pruned_configs, **kwargs)
+                timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self._timings[key] = timings[self.cache[key]]
                 self.configs_timings = timings
-                # TODO
                 self.pre_hook(args, reset_only=True)
-                # here, instead of later
-                # config = self.cache[key]
-                # full_nargs = {**self.nargs, **kwargs, **config.kwargs}
-                # self.pre_hook(full_nargs)
             config = self.cache[key]
         else:
             config = self.configs[0]
@@ -243,20 +214,17 @@ class Autotuner(KernelInterface):
         if not used_cached_result:
             global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.key_hash, self.configs_len, 
                                                   self._timings, self.rep_t, self.warmup_t, self.bench_time)
-        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
-            print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
-                  f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
+            if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
+                      f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
         full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         if config.pre_hook is not None:
             config.pre_hook(full_nargs)
         if triton_major_version >= 3:
             ret = self.fn.run(
                 *args,
-                num_warps=config.num_warps,
-                num_stages=config.num_stages,
-                num_ctas=config.num_ctas,
                 **kwargs,
-                **config.kwargs,
+                **config.all_kwargs(),
             )
         else:
             ret = self.fn.run(
@@ -286,10 +254,7 @@ class Autotuner(KernelInterface):
                         self.perf_model(
                             **self.nargs,
                             **kwargs,
-                            **config.kwargs,
-                            num_stages=config.num_stages,
-                            num_warps=config.num_warps,
-                            num_ctas=config.num_ctas,
+                            **config.all_kwargs(),
                         )
                         for config in pruned_configs
                     }
@@ -317,11 +282,8 @@ class Autotuner(KernelInterface):
                 ret.append(
                     self.fn.warmup(
                         *args,
-                        num_warps=config.num_warps,
-                        num_ctas=config.num_ctas,
-                        num_stages=config.num_stages,
                         **kwargs,
-                        **config.kwargs,
+                        **config.all_kwargs(),
                     ))
             else:
                 ret.append(
@@ -339,8 +301,8 @@ class Autotuner(KernelInterface):
         return ret
 
 
-def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100, 
-             use_cuda_graph=False, print_autotune_stats=False, config_space=None):
+def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, restore_value=None, pre_hook=None, post_hook=None,
+             warmup=25, rep=100, use_cuda_graph=False, config_space=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -378,15 +340,27 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     :type reset_to_zero: list[str]
     :param restore_value: a list of argument names whose value will be restored after evaluating any configs.
     :type restore_value: list[str]
+    :param pre_hook: a function that will be called before the kernel is called.
+        This overrides the default pre_hook used for 'reset_to_zero' and 'restore_value'.
+        'args': a list of arguments passed to the kernel.
+        'reset_only': a boolean indicating whether the pre_hook is called to reset the values only, without a corresponding post_hook.
+    :type pre_hook: lambda args, reset_only
+    :param post_hook: a function that will be called after the kernel is called.
+        This overrides the default post_hook used for 'restore_value'.
+        'args': a list of arguments passed to the kernel.
+        'exception': the exception raised by the kernel in case of a compilation or runtime error.
+    :type post_hook: lambda args, exception
     :param warmup: Warmup time (in ms) to pass to benchmarking, defaults to 5.
     :type warmup: int
     :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 50.
     :type rep: int
+    :param config_space: The Configuration Space to generate configs from. Only one of configs or config_space can be set. 
+    :type config_space: triton_dejavu.ConfigSpace 
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep, 
-                         config_space, use_cuda_graph)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook, post_hook, 
+                         prune_configs_by, warmup, rep, use_cuda_graph, config_space)
 
     return decorator
 
