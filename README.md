@@ -7,3 +7,6 @@ Install:
 pip install -e triton-dejavu/
 ```
 
+```
+docker build -f tests/Dockerfile . -t test-triton-dejavu
+```

@@ -23,7 +23,7 @@ def _get_cuda_version():
         print(f"[INFO] determining cuda version failed with: {e}")
         cuda_version = os.environ.get('CONTAINER_CUDA_VERSION', 'unkown')
         if cuda_version == 'unkown':
-            raise Exception("Can't determine cuda version and also VLLM_CUDA_VERSION is not set")
+            raise Exception("Can't determine cuda version and also CONTAINER_CUDA_VERSION is not set")
     return cuda_version
 
 
