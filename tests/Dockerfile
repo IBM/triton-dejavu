@@ -35,6 +35,8 @@ RUN pip install -r requirements.txt
 # broken?
 # RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 RUN git clone https://github.com/triton-lang/triton.git
+# RUN cd triton; git checkout release/2.3.x
+# RUN cd triton; git checkout release/3.0.x
 RUN pip install ./triton/python
 
 #### triton dejavu #### 
@@ -66,5 +68,5 @@ ENV CONTAINER_CUDA_VERSION=12.4
 # expose debugpy port
 EXPOSE 5678
 
-ENTRYPOINT ["python3", "-m", "tests.test_dejavu"]
+ENTRYPOINT ["python3", "-u", "-m", "tests.test_dejavu"]
 
