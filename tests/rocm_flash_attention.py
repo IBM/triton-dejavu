@@ -15,14 +15,14 @@
 #  *******************************************************************************/
 #
 
-
-# based on: https://github.com/ROCm/triton/blob/triton-mlir/python/perf-kernels/flash-attention.py
 """
 Fused Attention
 ===============
 
 This is a Triton implementation of the Flash Attention v2 algorithm from Tri Dao (https://tridao.me/publications/flash2/flash2.pdf)
 Credits: OpenAI kernel team, AMD ML Frameworks Triton team
+
+The code for the forward pass is based on the ROCm triton repository: https://github.com/ROCm/triton/blob/triton-mlir/python/perf-kernels/flash-attention.py (MIT license)
 
 Features supported:
 

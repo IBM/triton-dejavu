@@ -53,7 +53,7 @@ quantiles = [0.5, 0.2, 0.8]
 dump_dejavu_storage = True
 
 
-# based on https://github.com/vllm-project/vllm/blob/main/tests/kernels/test_layernorm.py
+# based on https://github.com/vllm-project/vllm/blob/main/tests/kernels/test_layernorm.py (Apache 2.0 license)
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
 @pytest.mark.parametrize("hidden_size", HIDDEN_SIZES)
 @pytest.mark.parametrize("dtype", DTYPES)
@@ -127,7 +127,7 @@ def test_rms_norm(
 
 
 
-# based on https://github.com/openai/triton/blob/main/python/tutorials/06-fused-attention.py
+# based on https://github.com/openai/triton/blob/main/python/tutorials/06-fused-attention.py (Apache 2.0 license)
 @pytest.mark.parametrize("batch_size", BATCH_SIZE_FLASH)
 @pytest.mark.parametrize("num_heads", NUM_HEADS_FLASH)
 @pytest.mark.parametrize("seqlen", SEQUENCE_LENGTH_FLASH)

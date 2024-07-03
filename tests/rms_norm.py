@@ -15,6 +15,15 @@
 #  *******************************************************************************/
 #
 
+"""
+RMS Norm
+===============
+
+This is a Triton to perform a RMS Norm. 
+The code is based on the unsloth triton repository: https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/rms_layernorm.py (Apache 2.0 license)
+
+"""
+
 import os
 import time
 import torch
@@ -25,7 +34,6 @@ import triton.language as tl
 import triton_dejavu
 
 
-# based on https://github.com/ELS-RD/kernl/blob/main/experimental/llama-v2/kernel/fused_kernel_ff.py
 @triton_dejavu.autotune(
     config_space=triton_dejavu.ConfigSpace(
         {'BLOCK_N_SIZE': [1024, 2048, 4096]},
