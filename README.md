@@ -33,7 +33,7 @@ import triton_dejavu
 Second, the environment variable `TRITON_DEJAVU_STORAGE` needs to be set and point to a read and writable directory. 
 
 
-To use the `ConfigSpaces` feature, replace the `config=` parameter for the triton_dejavu autotuner with  `config_space` definition:
+To use the `ConfigSpaces` feature, replace the `config` parameter for the triton_dejavu autotuner with  `config_space` definition:
 ```
  config_space=triton_dejavu.ConfigSpace(
         {'BLOCK_N_SIZE': [1024, 2048, 4096]},
