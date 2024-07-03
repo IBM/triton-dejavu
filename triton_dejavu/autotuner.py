@@ -17,6 +17,23 @@ triton_major_version = int(triton_version.split('.')[0])
 from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash, get_list_hash, get_string_hash
 
 
+# To be compatible with different triton 3.x versions
+def _all_kwargs(self):
+        if not hasattr(self, 'maxnreg'):
+            self.maxnreg = None
+        return {
+            **self.kwargs, **{
+                k: v
+                for (k, v) in (
+                    ("num_warps", self.num_warps),
+                    ("num_ctas", self.num_ctas),
+                    ("num_stages", self.num_stages),
+                    ("maxnreg", self.maxnreg),
+                ) if v is not None
+            }
+        }
+
+
 class Autotuner(KernelInterface):
 
     def __init__(
@@ -244,6 +261,8 @@ class Autotuner(KernelInterface):
         if config.pre_hook is not None:
             config.pre_hook(full_nargs)
         if triton_major_version >= 3:
+            if not hasattr(config, 'all_kwargs'):
+                config.all_kwargs = lambda : _all_kwargs(config)
             ret = self.fn.run(
                 *args,
                 **kwargs,
@@ -272,6 +291,9 @@ class Autotuner(KernelInterface):
                 top_k = int(len(self.configs) * top_k)
             if len(pruned_configs) > top_k:
                 if triton_major_version >= 3:
+                    for config in pruned_configs:
+                        if not hasattr(config, 'all_kwargs'):
+                            config.all_kwargs = lambda : _all_kwargs(config)
                     est_timing = {
                         config:
                         self.perf_model(
@@ -302,6 +324,8 @@ class Autotuner(KernelInterface):
         ret = []
         for config in self.prune_configs(kwargs):
             if triton_major_version >= 3:
+                if not hasattr(config, 'all_kwargs'):
+                    config.all_kwargs = lambda : _all_kwargs(config)
                 ret.append(
                     self.fn.warmup(
                         *args,
