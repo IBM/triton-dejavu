@@ -274,9 +274,9 @@ gpu_name = torch.cuda.get_device_name()
                            lambda kwarg: kwarg['PRE_LOAD_V'] == True or gpu_name == 'NVIDIA H100 PCIe',   # to ensure pre load for all other GPUs
                            ],
         num_warps=[2, 4, 8],
-        num_stages=[2, 4, 6],
+        num_stages=[2, 4, 6, 8],
         num_ctas=[1],  
-        enable_warp_specialization=[False, True],  # for triton <3.0
+        enable_warp_specialization=[False, True],  # for triton < 3.0
     ),
     rep=10,
     warmup=5,
@@ -290,7 +290,7 @@ gpu_name = torch.cuda.get_device_name()
         'MAX_SEQLENS_Q', 'MAX_SEQLENS_K', 'VARLEN', 'ACTUAL_BLOCK_DMODEL',
         # 'BATCH_SIZE'
         ],
-    use_cuda_graph=False,
+    use_cuda_graph=True
 )
 @triton.jit
 def attn_fwd(
