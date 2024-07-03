@@ -15,7 +15,6 @@
 #  *******************************************************************************/
 #
 
-
 from __future__ import annotations
 
 import builtins
@@ -41,7 +40,7 @@ from triton_dejavu.dejavu_storage import (
 )
 
 
-# To be compatible with different triton 3.x versions
+# to be compatible with different triton 3.x versions
 def _all_kwargs(self):
     if not hasattr(self, "maxnreg"):
         self.maxnreg = None
@@ -205,9 +204,12 @@ class Autotuner(KernelInterface):
                 " Make sure that you don't re-define auto-tuned symbols."
             )
         # augment meta-parameters with tunable ones
-        if not hasattr(config, "all_kwargs"):
-            config.all_kwargs = lambda: _all_kwargs(config)
-        current = dict(meta, **config.all_kwargs())
+        if triton_major_version >= 3:
+            if not hasattr(config, "all_kwargs"):
+                config.all_kwargs = lambda: _all_kwargs(config)
+            current = dict(meta, **config.all_kwargs())
+        else:
+            current = dict(meta, **config.kwargs)
         full_nargs = {**self.nargs, **current}
 
         def kernel_call():

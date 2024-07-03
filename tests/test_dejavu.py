@@ -104,12 +104,10 @@ def test_rms_norm(
 
     captured = ""
     if capsys is not None:
-        captured_raw = capsys.readouterr()  # returns stdout, stderr
+        captured_raw = capsys.readouterr()
         for l in captured_raw:
             if len(l) > 0:
-                # captured += l  # + '|'
                 captured += l + " "
-    # print(captured)
 
     # benchmark only correct results
     if do_benchmarks:
@@ -289,10 +287,9 @@ def test_flash_attention_v2(
 
         captured = ""
         if capsys is not None:
-            captured_raw = capsys.readouterr()  # returns stdout, stderr
+            captured_raw = capsys.readouterr()
             for l in captured_raw:
                 if len(l) > 0:
-                    # captured += l  # + '|'
                     captured += l + " "
 
         # benchmark only correct results
@@ -368,7 +365,6 @@ def test_flash_attention_v2(
             torch.cuda.ipc_collect()
         except Exception as e:
             print(e)
-            # pass
         finally:
             if inner_exception is not None:
                 raise inner_exception
@@ -383,9 +379,7 @@ if __name__ == "__main__":
 
     global_pds = {}
     gpu_name = torch.cuda.get_device_name()
-    # cuda_version = 'unknown'
     cuda_version = triton_dejavu.dejavu_utilities._get_cuda_version()
-
     print(
         f"\nRunning on {gpu_name} with Triton {triton.__version__} using cuda {cuda_version}...\n"
     )
@@ -394,8 +388,6 @@ if __name__ == "__main__":
         pytest.global_pds = global_pds
     if len(sys.argv) >= 1:
         args = [__file__]
-        # args = [__file__, '-x']
-        # args.append(f"-k {' '.join(sys.argv[1:])}")
         filter_args = ""
         for ca in sys.argv[1:]:
             if ca[0] == "-":
@@ -404,7 +396,6 @@ if __name__ == "__main__":
                 filter_args += f"{ca} or "
         if len(filter_args) > 2:
             args.append(f"-k {filter_args[:-3]}")
-        # print(f"starting pytest with args: {args}")
         pytest.main(args=args)
     else:
         pytest.main(args=[__file__])
@@ -413,7 +404,6 @@ if __name__ == "__main__":
             print(
                 f"\nPerformance results of test {test} (only tests without numerical error and with valid shapes, etc.):"
             )
-            # print(df.to_markdown())
             if os.environ.get("WATSONX_SAVE_CSV", "0") == "1":
                 filename = "perf_test.csv"
                 df.to_csv(filename, sep="\t", encoding="utf-8")
