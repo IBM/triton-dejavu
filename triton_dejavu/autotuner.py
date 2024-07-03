@@ -172,7 +172,9 @@ class Autotuner(KernelInterface):
             raise ValueError(f"Conflicting meta-parameters: {', '.join(conflicts)}."
                              " Make sure that you don't re-define auto-tuned symbols.")
         # augment meta-parameters with tunable ones
-        current = dict(meta, **config.kwargs)
+        if not hasattr(config, 'all_kwargs'):
+                config.all_kwargs = lambda : _all_kwargs(config)
+        current = dict(meta, **config.all_kwargs())
         full_nargs = {**self.nargs, **current}
 
         def kernel_call():
@@ -182,6 +184,9 @@ class Autotuner(KernelInterface):
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
+                    # num_warps=config.num_warps,
+                    # num_stages=config.num_stages,
+                    # num_ctas=config.num_ctas,
                     **current,
                 )
             else:
