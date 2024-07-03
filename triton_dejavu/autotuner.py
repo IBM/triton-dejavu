@@ -70,12 +70,6 @@ class Autotuner(KernelInterface):
         use_cuda_graph=False,
         config_space: ConfigSpace = None,
     ):
-        """
-        :param prune_configs_by: a dict of functions that are used to prune configs, fields:
-            'perf_model': performance model used to predicate running time with different configs, returns running time
-            'top_k': number of configs to bench
-            'prune_num_stages_by'(optional): a function used to prune num_stages. It takes configs:List[Config] as its input, and returns pruned configs.
-        """
         if config_space:
             self.config_space = config_space
             assert not configs, "can't configure configs and config_space"
@@ -379,7 +373,7 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
     .. highlight:: python
     .. code-block:: python
 
-        @triton.autotune(configs=[
+        @triton_dejavu.autotune(configs=[
             triton.Config(kwargs={'BLOCK_SIZE': 128}, num_warps=4),
             triton.Config(kwargs={'BLOCK_SIZE': 1024}, num_warps=8),
           ],
@@ -437,11 +431,46 @@ def autotune(key, configs=None, prune_configs_by=None, reset_to_zero=None, resto
 
 class ConfigSpace:
     """
-    An object that represents the space of possible kernel configuration for the auto-tuner to try.
-    Details of arguments please see in triton.Config
+    An object to represent the space of possible kernel configurations for the auto-tuner to evaluate.
+    At the initalization of the autotuner, a list of all possible and valid configurations is generated 
+    and passed to the autotuner. 
+
+    example:
+    .. highlight:: python
+    .. code-block:: python
+
+        @triton_dejavu.autotune(
+            config_space=triton_dejavu.ConfigSpace(
+                {'BLOCK_N_SIZE': [1024, 2048, 4096]},
+                num_warps=[4, 8, 16],
+                num_stages=[1, 2, 4, 6],
+                num_ctas=[1]
+            ),
+
+    :ivar kwargs_with_lists: a dictionary of lists of meta-parameters to pass to the kernel as keyword arguments.
+    :type kwargs: dict[Str, List[Any]]
+    :ivar num_warps: the number of warps to use for the kernel when compiled for GPUs. For example, if
+                      `num_warps=8`, then each kernel instance will be automatically parallelized to
+                      cooperatively execute using `8 * 32 = 256` threads.
+    :type num_warps: int
+    :ivar num_stages: the number of stages that the compiler should use when software-pipelining loops.
+                       Mostly useful for matrix multiplication workloads on SM80+ GPUs.
+    :type num_stages: int
+    :ivar num_ctas: number of blocks in a block cluster. SM90+ only.
+    :type num_ctas: int
+    :ivar maxnreg: maximum number of registers one thread can use.  Corresponds
+                       to ptx .maxnreg directive.  Not supported on all platforms.
+    :type maxnreg: Optional[int]
+    :ivar enable_warp_specialization: enable specialization (spatial partitioning) or not. 
+                                      See https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#spatial-partitioning-also-known-as-warp-specialization (only triton < 3.0)
+    :type enable_warp_specialization: bool
+    :ivar pre_hook: a function that will be called before the kernel is called. Parameters of this
+                    function are args.
+    :ivar kwarg_conditions: a list of functions to be evaluated during configuration creation. The functions are called
+                            with the generated kwarg dictionary. Only configuration combinations where all functions 
+                            evaluate to True are passed to the autotuner.
     """
 
-    # TODO: specify skip_configs? e.g. if it would cause a segfault?
     def __init__(self, kwargs_with_lists, num_warps=None, num_stages=None, num_ctas=None, enable_warp_specialization=None, pre_hook=None, kwarg_conditions=None):
         if num_warps is None:
             num_warps = [4]
@@ -464,7 +493,6 @@ class ConfigSpace:
         self.num_ctas = num_ctas
         self.num_stages = num_stages
         self.enable_warp_specialization = enable_warp_specialization
-        # TODO[shuhaoj]: May make enable_persistent configurable in future if necessary.
         # self.enable_persistent = False
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions

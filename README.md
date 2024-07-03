@@ -114,7 +114,7 @@ The Triton autotuner requires that the developer provides a list of configuratio
 Hence, the dejavu-mechanism enabled us to develop a method for exploring the complete space of possible autotuner configurations leading to even better performance and reducing the amount of application-specific expert-knowledge required to effectively use Triton in production. 
 
 The `ConfigSpaces` class allows to define ranges of parameters and then creates a list of all possible combinations. This list is then passed to the autotuner.
-During generation of the list, configuration options that are only available on certain platforms are sorted out automatically. To facilitate this filtering, the user can specify a list of lambda functions using the optional `kwarg_conditions` parameter, as shown in the example below. Only configurations that fulfill all provided conditions are forwarded to the autotuner. 
+During generation of the list, configuration options that are only available on certain platforms are sorted out automatically. To facilitate this filtering, the user can specify a list of functions using the optional `kwarg_conditions` parameter, as shown in the example below. The functions are then called with all instances of generated kwarg dictionaries. Only configurations where all functions evaluate to true are forwarded to the autotuner. 
 
 ```
  config_space=triton_dejavu.ConfigSpace(
