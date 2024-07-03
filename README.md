@@ -2,13 +2,66 @@ Triton Deja-vu
 =================
 Framework to reduce the autotuner overhead of [triton-lang](https://github.com/triton-lang/triton) to (close to) 0 for well known deployments.
 
-Features
-----------------
-
 This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes two features to the Triton community:
 1. Store and safely restore autotuner states using JSON files. 
 2. `ConfigSpaces` to explore a defined space exhaustively.
 
+(more details see [below](#features))
+
+
+Installation
+----------------
+
+Currently, triton-dejavu can only be installed from source:
+
+```
+git clone https://github.com/IBM/triton-dejavu.git
+pip install -e triton-dejavu/
+```
+
+
+Usage
+-----------------
+
+To use the store and restore feature, simply replace the triton autotuner with the triton-dejavu autotuner:
+```
+import triton_dejavu
+
+@triton_dejavu.autotune(
+    ...
+```
+Second, the environment variable `TRITON_DEJAVU_STORAGE` needs to be set and point to a read and writable directory. 
+
+
+To use the `ConfigSpaces` feature, replace the `config=` parameter for the triton_dejavu autotuner with  `config_space` definition:
+```
+ config_space=triton_dejavu.ConfigSpace(
+        {'BLOCK_N_SIZE': [1024, 2048, 4096]},
+        num_warps=[4, 8, 16],
+        num_stages=[1, 2, 4, 6],
+        num_ctas=[1],
+        enable_warp_specialization=[False, True]
+    ),
+```
+
+Examples
+----------------
+
+This repository contains two example Triton kernels in the `tests` directory using the provided Dockerfile:
+
+```
+docker build -f tests/Dockerfile . -t test-triton-dejavu
+
+# create a directory to read & write the autotuner cache
+chmod o+rw dejavu-data/
+
+# run the container
+docker run --rm -it --gpus '"device=0"' -v $(pwd)/dejavu-data/:/storage/dejavu-data/ test-triton-dejavu:latest
+```
+
+
+Features
+----------------
 
 ### Store and safely restore autotuner states
 
@@ -79,52 +132,4 @@ During generation of the list, configuration options that are only available on 
         enable_warp_specialization=[False, True],  # for triton < 3.0
     ),
 ```
-
-Usage
------------------
-
-To use the store and restore feature, simply replace the triton autotuner with the triton-dejavu autotuner:
-```
-import triton_dejavu
-
-@triton_dejavu.autotune(
-    ...
-```
-Second, the environment variable `TRITON_DEJAVU_STORAGE` needs to be set and point to a read and writable directory. 
-
-
-To use the `ConfigSpaces` feature, replace the `config=` parameter for the triton_dejavu autotuner with  `config_space` definition:
-```
- config_space=triton_dejavu.ConfigSpace(
-        {'BLOCK_N_SIZE': [1024, 2048, 4096]},
-        num_warps=[4, 8, 16],
-        num_stages=[1, 2, 4, 6],
-        num_ctas=[1],
-        enable_warp_specialization=[False, True]
-    ),
-```
-
-Installation
-----------------
-
-```
-git clone https://github.com/IBM/triton-dejavu.git
-pip install -e triton-dejavu/
-```
-
-Examples
-----------------
-
-This repository contains two example Triton kernels in the `tests` directory using the provided Dockerfile:
-
-```
-docker build -f tests/Dockerfile . -t test-triton-dejavu
-
-# create a directory to read & write the autotuner cache
-chmod o+rw dejavu-data/
-
-# run the container
-docker run --rm -it --gpus '"device=0"' -v $(pwd)/dejavu-data/:/storage/dejavu-data/ test-triton-dejavu:latest
-
-
 
