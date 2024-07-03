@@ -14,7 +14,7 @@ from triton import KernelInterface, Config, OutOfResources
 from triton import __version__ as triton_version
 triton_major_version = int(triton_version.split('.')[0])
 
-from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash, get_key_list_hash
+from triton_dejavu.dejavu_storage import global_dejavu_storage, get_config_list_hash, get_list_hash, get_string_hash
 
 
 class Autotuner(KernelInterface):
@@ -53,16 +53,9 @@ class Autotuner(KernelInterface):
                 self.configs = configs
         self.configs_hash = get_config_list_hash(self.configs)
         # the key hash is not covered by fn.hash!
-        self.key_hash = get_key_list_hash(key)
+        self.key_hash = get_list_hash(key)
         self.configs_len = len(self.configs)
         self.key_idx = [arg_names.index(k) for k in key]
-        # self.cache = {}
-        self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash, self.key_hash)
-        if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", '0') == '1':
-            self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash, self.key_hash)
-            # important, don't update configs_hash
-            if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
-                print(f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache.")
         self.arg_names = arg_names
 
         # Reset to zero or restore values
@@ -77,8 +70,10 @@ class Autotuner(KernelInterface):
         # Hook to reset or restore for required tensors
         self.pre_hook = lambda args, reset_only=False: 0
         self.post_hook = lambda args: 0
+        self.custom_pre_hook = False
         if pre_hook:
             self.pre_hook = pre_hook
+            self.custom_pre_hook = True
         elif (len(self.reset_idx) > 0 or len(self.restore_idx) > 0):
 
             def _pre_hook(args, reset_only=False):
@@ -89,8 +84,10 @@ class Autotuner(KernelInterface):
 
             self.pre_hook = _pre_hook
         
+        self.custom_post_hook = False
         if post_hook:
             self.post_hook = post_hook
+            self.custom_post_hook = True
         elif len(self.restore_idx) > 0:
 
             def _post_hook(args):
@@ -109,13 +106,16 @@ class Autotuner(KernelInterface):
             self.perf_model = prune_configs_by.get("perf_model", self.perf_model)
             self.configs_top_k = prune_configs_by.get("top_k", self.configs_top_k)
             self.early_config_prune = prune_configs_by.get("early_config_prune", self.early_config_prune)
+            print("[Triton Dejavu:WARNING] use of 'prune_configs_by' could influence the autotuner decision in a way not visible to triton-dejavu. Please ensure that configs could be reused.")
+        # TODO: how to include in param hash?
+
+        self.warmup_t = warmup
+        self.rep_t = rep
 
         self.fn = fn
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
-        self.warmup_t = warmup
-        self.rep_t = rep
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
@@ -123,6 +123,26 @@ class Autotuner(KernelInterface):
         else:
             self.use_cuda_graph = False
             self.benchmarkig_stream = None
+
+        self._param_hash = self._get_param_hash()
+        # self.cache = {}
+        self.cache = global_dejavu_storage.restore_autotuner_cache(fn, self.configs_hash, self.key_hash, self._param_hash)
+        if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", '0') == '1':
+            self.configs = global_dejavu_storage.get_used_configs(fn, self.configs_hash, self.key_hash, self._param_hash)
+            # important, don't update configs_hash
+            if os.environ.get("TRITON_DEJAVU_DEBUG", '0') == '1':
+                print(f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache.")
+
+    def _get_param_hash(self):
+        hs = f'autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}'
+        # not relevant
+        # hs += get_list_hash(self.reset_idx)
+        # hs += get_list_hash(self.restore_idx)
+        # TODO: how to hash the custom hooks?
+        #  inspect cant find it, possible would be str(inspect.Signature().from_callable(self.pre_hook))
+        #  maybe not relevant since should not influence the autotuner result
+        h = get_string_hash(hs)
+        return h
 
     def _bench(self, *args, config, **meta):
         if triton_major_version >= 3:
@@ -205,6 +225,9 @@ class Autotuner(KernelInterface):
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
                 self._timings[key] = timings[self.cache[key]]
+                if (self.use_cuda_graph and self._timings[key] == float("inf")) \
+                    or (not self.use_cuda_graph and self._timings[key][0] == float("inf")):
+                    raise RuntimeError(f"All autotune examples failed (timing is {self._timings[key]}).")
                 self.configs_timings = timings
                 self.pre_hook(args, reset_only=True)
             config = self.cache[key]
@@ -212,11 +235,11 @@ class Autotuner(KernelInterface):
             config = self.configs[0]
         self.best_config = config
         if not used_cached_result:
-            global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.key_hash, self.configs_len, 
-                                                  self._timings, self.rep_t, self.warmup_t, self.bench_time)
+            global_dejavu_storage.add_autotuner_cache(self.cache, self.fn, self.configs_hash, self.key_hash, self._param_hash, self.configs_len, 
+                                                      self._timings, self.rep_t, self.warmup_t, self.bench_time)
             if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
                 print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
-                      f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
+                      f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]};")
         full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         if config.pre_hook is not None:
             config.pre_hook(full_nargs)

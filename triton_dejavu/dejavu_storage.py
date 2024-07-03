@@ -101,8 +101,10 @@ def _wait_fn_hash(fn):
     return fn_hash
 
 
-def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash):
-    return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}/{storage_tag}"
+def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
+    # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
+    hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
+    return f"{fn_name}-{hash_of_hash}/{storage_tag}"
 
 
 def get_config_list_hash(configs):
@@ -119,8 +121,15 @@ def get_config_list_hash(configs):
     return h
 
 
-def get_key_list_hash(key):
-    s = '|'.join(key)
+def get_list_hash(l):
+    s = '|'.join(l)
+    h = hashlib.sha256(s.encode('utf-8')).hexdigest()
+    # triton jit uses sha1?
+    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
+    return h
+
+
+def get_string_hash(s):
     h = hashlib.sha256(s.encode('utf-8')).hexdigest()
     # triton jit uses sha1?
     # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
@@ -156,10 +165,10 @@ class DejavuStorage:
             with open(file_name, 'w') as f:
                 json.dump(str_l, f, indent=4)
 
-    def add_autotuner_cache(self, cache, fn, configs_hash, key_hash, configs_len, timings, repetitiont, warmupt, bench_time):
+    def add_autotuner_cache(self, cache, fn, configs_hash, key_hash, param_hash, configs_len, timings, repetitiont, warmupt, bench_time):
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash)
         if folder_name not in self.fn_storage:
             cache_json = {'signature': str(fn), 'total_bench_time_s': 0.0, 'evaluated_configs': configs_len, 
                           'cache': {}, 'timings': {}}
@@ -191,11 +200,11 @@ class DejavuStorage:
             self.used_configs[folder_name] = tmp_used_configs
             self.__store__()
 
-    def restore_autotuner_cache(self, fn, configs_hash, key_hash):
+    def restore_autotuner_cache(self, fn, configs_hash, key_hash, param_hash):
         # we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash)
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
             return {}
@@ -218,10 +227,10 @@ class DejavuStorage:
         self.used_configs[folder_name] = tmp_used_configs
         return ret
     
-    def get_used_configs(self, fn, configs_hash, key_hash):
+    def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
-        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash)
+        folder_name = _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash)
         return self.used_configs[folder_name]
 
     
