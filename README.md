@@ -133,3 +133,9 @@ During generation of the list, configuration options that are only available on 
     ),
 ```
 
+Compatibility
+------------------
+
+Triton-dejavu is currently compatible (and tested) with triton versions 2.2 and newer.
+
+
