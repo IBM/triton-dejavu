@@ -30,7 +30,7 @@ import triton_dejavu
 # CUDA_DEVICES = [
 #     f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
 # ]
-CUDA_DEVICES = ['cuda:0']
+CUDA_DEVICES = ["cuda:0"]
 
 DTYPES = [torch.float16]
 SEEDS = [0]
@@ -40,12 +40,12 @@ HIDDEN_SIZES = [768, 4096, 8192]
 
 BATCH_SIZE_FLASH = [1, 32]
 NUM_HEADS_FLASH = [2, 32]
-SEQUENCE_LENGTH_FLASH= [512, 2048]
+SEQUENCE_LENGTH_FLASH = [512, 2048]
 HEAD_SIZES_FLASH = [32, 64, 128]  # only powers of 2!
 CAUSAL = [True]  # vLLM only needs causal=True
 VARLEN = [True]  # vLLM only needs varlen=True
-MAX_VALUE = [0.01, 1.0, 100.0]  
-MAX_VALUE_FLASH = [0.01, 1.0]  
+MAX_VALUE = [0.01, 1.0, 100.0]
+MAX_VALUE_FLASH = [0.01, 1.0]
 
 
 do_benchmarks = True
@@ -62,7 +62,7 @@ dump_dejavu_storage = True
 @pytest.mark.parametrize("max_value", MAX_VALUE)
 @torch.inference_mode()
 def test_rms_norm(
-    capsys, 
+    capsys,
     num_tokens: int,
     hidden_size: int,
     dtype: torch.dtype,
@@ -71,10 +71,10 @@ def test_rms_norm(
     max_value: float,
 ) -> None:
     from rms_norm import rmsnorm_triton_wrapper
-    
+
     ATOL = 1e-4
     RTOL = 1e-3 * 2
-    
+
     torch.manual_seed(seed)
     torch.cuda.set_device(device)
     tdev = torch.device(device)
@@ -83,7 +83,9 @@ def test_rms_norm(
     layer_weights.normal_(mean=1.0, std=0.1)
     layer_weights = layer_weights.to(device=tdev, dtype=dtype)
     scale = 1 / (2 * hidden_size)
-    x = torch.randn(num_tokens, hidden_size, dtype=dtype, device=tdev).uniform_(-1 * max_value, max_value)
+    x = torch.randn(num_tokens, hidden_size, dtype=dtype, device=tdev).uniform_(
+        -1 * max_value, max_value
+    )
     x *= scale
 
     # PyTorch-native implementation equivalent to forward()
@@ -97,34 +99,56 @@ def test_rms_norm(
 
     # test triton kernel
     out = rmsnorm_triton_wrapper(x, layer_weights)
-    
+
     triton.testing.assert_close(ref_out, out, atol=ATOL, rtol=RTOL)
 
-    captured = ''
+    captured = ""
     if capsys is not None:
         captured_raw = capsys.readouterr()  # returns stdout, stderr
         for l in captured_raw:
             if len(l) > 0:
                 # captured += l  # + '|'
-                captured += l  + ' '
+                captured += l + " "
     # print(captured)
 
-    # benchmark only correct results   
+    # benchmark only correct results
     if do_benchmarks:
         my_name = sys._getframe().f_code.co_name
         if my_name not in pytest.global_pds:
-            pytest.global_pds[my_name] = pd.DataFrame(columns=['num_tokens', 'hidden_size', 'dtype', 'device', 'max_value',
-                                                               'ms', 'min_ms', 'max_ms', 'captured'])
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: rmsnorm_triton_wrapper(x, layer_weights), quantiles=quantiles)
-        nr = [num_tokens, hidden_size, dtype, device, max_value, ms, min_ms, max_ms, captured]
+            pytest.global_pds[my_name] = pd.DataFrame(
+                columns=[
+                    "num_tokens",
+                    "hidden_size",
+                    "dtype",
+                    "device",
+                    "max_value",
+                    "ms",
+                    "min_ms",
+                    "max_ms",
+                    "captured",
+                ]
+            )
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            lambda: rmsnorm_triton_wrapper(x, layer_weights), quantiles=quantiles
+        )
+        nr = [
+            num_tokens,
+            hidden_size,
+            dtype,
+            device,
+            max_value,
+            ms,
+            min_ms,
+            max_ms,
+            captured,
+        ]
         pytest.global_pds[my_name].loc[len(pytest.global_pds[my_name])] = nr
-    
+
     # cleanup memory
     del x
     del out
     del ref_out
     torch.cuda.empty_cache()
-
 
 
 # based on https://github.com/openai/triton/blob/main/python/tutorials/06-fused-attention.py (Apache 2.0 license)
@@ -139,26 +163,27 @@ def test_rms_norm(
 @pytest.mark.parametrize("varlen_mode", VARLEN)
 @pytest.mark.parametrize("max_value", MAX_VALUE_FLASH)
 @torch.inference_mode()
-def test_flash_attention_v2(capsys,
-                            batch_size,
-                            num_heads,
-                            seqlen,
-                            head_size,
-                            causal,
-                            dtype,
-                            seed,
-                            device,
-                            varlen_mode,
-                            max_value):
-
+def test_flash_attention_v2(
+    capsys,
+    batch_size,
+    num_heads,
+    seqlen,
+    head_size,
+    causal,
+    dtype,
+    seed,
+    device,
+    varlen_mode,
+    max_value,
+):
     from rocm_flash_attention import attn_forward_wrapper
- 
+
     ATOL = 1e-2 * max_value
     RTOL = 1e-2
     torch.manual_seed(seed)
     tdev = torch.device(device)
     torch.cuda.set_device(tdev)
-    
+
     q = None
     k = None
     v = None
@@ -172,19 +197,35 @@ def test_flash_attention_v2(capsys,
     seq_start_loc = None
     cu_seqlens_k = None
 
-    inner_exception = None 
+    inner_exception = None
     try:
-    
         # q = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5).requires_grad_())
         # k = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5).requires_grad_())
         # v = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5).requires_grad_())
-        q = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5 * max_value).requires_grad_())
-        k = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5 * max_value).requires_grad_())
-        v = (torch.empty((batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev).normal_(mean=0.0, std=0.5 * max_value).requires_grad_())
+        q = (
+            torch.empty(
+                (batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev
+            )
+            .normal_(mean=0.0, std=0.5 * max_value)
+            .requires_grad_()
+        )
+        k = (
+            torch.empty(
+                (batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev
+            )
+            .normal_(mean=0.0, std=0.5 * max_value)
+            .requires_grad_()
+        )
+        v = (
+            torch.empty(
+                (batch_size, num_heads, seqlen, head_size), dtype=dtype, device=tdev
+            )
+            .normal_(mean=0.0, std=0.5 * max_value)
+            .requires_grad_()
+        )
         sm_scale = 0.5
         # dout = torch.randn_like(q)
 
-    
         # reference implementation
         M = torch.tril(torch.ones((seqlen, seqlen), device=tdev))
         p = torch.matmul(q, k.transpose(2, 3)) * sm_scale
@@ -193,7 +234,7 @@ def test_flash_attention_v2(capsys,
         p = torch.softmax(p.float(), dim=-1).half()
         # p = torch.exp(p)
         ref_out = torch.matmul(p, v)
-    
+
         # triton implementation
         cu_seqlens_q = None
         cu_seqlens_k = None
@@ -212,9 +253,9 @@ def test_flash_attention_v2(capsys,
             q = q.transpose(1, 2)
             k = k.transpose(1, 2)
             v = v.transpose(1, 2)
-            q = q.reshape(batch_size*seqlen, num_heads, head_size)
-            k = k.reshape(batch_size*seqlen, num_heads, head_size)
-            v = v.reshape(batch_size*seqlen, num_heads, head_size)
+            q = q.reshape(batch_size * seqlen, num_heads, head_size)
+            k = k.reshape(batch_size * seqlen, num_heads, head_size)
+            v = v.reshape(batch_size * seqlen, num_heads, head_size)
             # # based on https://github.com/ROCm/triton/blob/b9e5290de8bf3a79c4e91ceed7e61b3c8d041b30/python/perf-kernels/flash-attention.py#L1149
             # seqlens_q = torch.randint(1, seqlen + 1, (batch_size,), dtype=torch.int32)
             # seqlens_k = torch.randint(1, seqlen + 1, (batch_size,), dtype=torch.int32)
@@ -223,52 +264,94 @@ def test_flash_attention_v2(capsys,
             # cu_seqlens_q = cu_seqlens_q.to(tdev)
             # cu_seqlens_k = cu_seqlens_k.to(tdev)
             # from above...
-            seq_start_loc = torch.zeros(batch_size + 1,
-                                        dtype=torch.int32,
-                                        device=tdev)
+            seq_start_loc = torch.zeros(batch_size + 1, dtype=torch.int32, device=tdev)
             prompt_lens = [seqlen] * batch_size
-            prompt_lens_tensor = torch.tensor(prompt_lens,
-                                              dtype=torch.long,
-                                              device=tdev)
-            torch.cumsum(prompt_lens_tensor,
-                         dim=0,
-                         dtype=seq_start_loc.dtype,
-                         out=seq_start_loc[1:])
+            prompt_lens_tensor = torch.tensor(
+                prompt_lens, dtype=torch.long, device=tdev
+            )
+            torch.cumsum(
+                prompt_lens_tensor,
+                dim=0,
+                dtype=seq_start_loc.dtype,
+                out=seq_start_loc[1:],
+            )
             cu_seqlens_q = seq_start_loc
             cu_seqlens_k = seq_start_loc
-        out = attn_forward_wrapper(q, k, v, causal, sm_scale, seqlen, seqlen, cu_seqlens_q, cu_seqlens_k)
+        out = attn_forward_wrapper(
+            q, k, v, causal, sm_scale, seqlen, seqlen, cu_seqlens_q, cu_seqlens_k
+        )
         if varlen_mode:
             out = out.unflatten(0, (batch_size, seqlen))
-            out = out.transpose(1, 2) 
-    
+            out = out.transpose(1, 2)
+
         # for better reports
         triton.testing.assert_close(ref_out, out, atol=ATOL, rtol=RTOL)
-    
-        captured = ''
+
+        captured = ""
         if capsys is not None:
             captured_raw = capsys.readouterr()  # returns stdout, stderr
             for l in captured_raw:
                 if len(l) > 0:
                     # captured += l  # + '|'
-                    captured += l  + ' '
+                    captured += l + " "
 
-        # benchmark only correct results   
+        # benchmark only correct results
         if do_benchmarks:
             my_name = sys._getframe().f_code.co_name
             if my_name not in pytest.global_pds:
-                pytest.global_pds[my_name] = pd.DataFrame(columns=['batch_size', 'num_heads', 'seqlen', 'head_size', 'causal', 'varlen', 
-                                                                   'dtype', 'device', 'max_value', 'ms', 'min_ms', 'max_ms', 'captured'])
+                pytest.global_pds[my_name] = pd.DataFrame(
+                    columns=[
+                        "batch_size",
+                        "num_heads",
+                        "seqlen",
+                        "head_size",
+                        "causal",
+                        "varlen",
+                        "dtype",
+                        "device",
+                        "max_value",
+                        "ms",
+                        "min_ms",
+                        "max_ms",
+                        "captured",
+                    ]
+                )
             ms, min_ms, max_ms = triton.testing.do_bench(
-                lambda: attn_forward_wrapper(q, k, v, causal, sm_scale, seqlen, seqlen, cu_seqlens_q, cu_seqlens_k), 
-                quantiles=quantiles)                                  
-            nr = [batch_size, num_heads, seqlen, head_size, causal, varlen_mode, dtype, device, max_value, ms, min_ms, max_ms, captured]
+                lambda: attn_forward_wrapper(
+                    q,
+                    k,
+                    v,
+                    causal,
+                    sm_scale,
+                    seqlen,
+                    seqlen,
+                    cu_seqlens_q,
+                    cu_seqlens_k,
+                ),
+                quantiles=quantiles,
+            )
+            nr = [
+                batch_size,
+                num_heads,
+                seqlen,
+                head_size,
+                causal,
+                varlen_mode,
+                dtype,
+                device,
+                max_value,
+                ms,
+                min_ms,
+                max_ms,
+                captured,
+            ]
             pytest.global_pds[my_name].loc[len(pytest.global_pds[my_name])] = nr
     except Exception as e:
         print(e)
         inner_exception = e
     finally:
         # cleanup memory
-        try: 
+        try:
             del q
             del k
             del v
@@ -292,18 +375,20 @@ def test_flash_attention_v2(capsys,
 
 
 if __name__ == "__main__":
-    
     used_dejavu_storage = None
     if dump_dejavu_storage:
         from triton_dejavu import global_dejavu_storage
+
         used_dejavu_storage = global_dejavu_storage
 
     global_pds = {}
     gpu_name = torch.cuda.get_device_name()
     # cuda_version = 'unknown'
     cuda_version = triton_dejavu.dejavu_utilities._get_cuda_version()
-    
-    print(f"\nRunning on {gpu_name} with Triton {triton.__version__} using cuda {cuda_version}...\n")
+
+    print(
+        f"\nRunning on {gpu_name} with Triton {triton.__version__} using cuda {cuda_version}...\n"
+    )
     if do_benchmarks:
         pytest.do_benchmarks = do_benchmarks
         pytest.global_pds = global_pds
@@ -311,9 +396,9 @@ if __name__ == "__main__":
         args = [__file__]
         # args = [__file__, '-x']
         # args.append(f"-k {' '.join(sys.argv[1:])}")
-        filter_args = ''
+        filter_args = ""
         for ca in sys.argv[1:]:
-            if ca[0] == '-':
+            if ca[0] == "-":
                 args.append(ca)
             else:
                 filter_args += f"{ca} or "
@@ -325,17 +410,21 @@ if __name__ == "__main__":
         pytest.main(args=[__file__])
     if do_benchmarks:
         for test, df in pytest.global_pds.items():
-            print(f"\nPerformance results of test {test} (only tests without numerical error and with valid shapes, etc.):")
+            print(
+                f"\nPerformance results of test {test} (only tests without numerical error and with valid shapes, etc.):"
+            )
             # print(df.to_markdown())
-            if os.environ.get('WATSONX_SAVE_CSV', '0') == '1':
-                filename = 'perf_test.csv'
-                df.to_csv(filename, sep='\t', encoding='utf-8')
+            if os.environ.get("WATSONX_SAVE_CSV", "0") == "1":
+                filename = "perf_test.csv"
+                df.to_csv(filename, sep="\t", encoding="utf-8")
                 print(f"(stored in {filename})")
-            else: 
+            else:
                 print(df.to_string())
-        print(f"\nThis test used triton version: {triton.__version__}\n" \
-              f"This test was executed on: {gpu_name}\n" \
-              f"This test used cuda (nvcc): {cuda_version}")
+        print(
+            f"\nThis test used triton version: {triton.__version__}\n"
+            f"This test was executed on: {gpu_name}\n"
+            f"This test used cuda (nvcc): {cuda_version}"
+        )
     if dump_dejavu_storage:
         print("\n\ndump dejavu storage:")
         used_dejavu_storage.dump_storage()
