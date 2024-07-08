@@ -36,6 +36,7 @@ RUN pip install ./triton/python
 
 WORKDIR /workspace/triton-dejavu
 COPY setup.py setup.py
+COPY README.md README.md
 COPY triton_dejavu triton_dejavu
 RUN pip install ./
 
