@@ -40,24 +40,32 @@ def _create_tuple(k):
     entries = s.split(", ")
     ret = []
     for e in entries:
-        try:
-            ei = int(e)
-            ret.append(ei)
-        except ValueError:
-            try:
-                ef = float(e)
-                ret.append(ef)
-            except ValueError:
-                try:
-                    if type(e) == str and (e == "True" or e == "False"):
-                        eb = bool(strtobool(e))
-                        ret.append(eb)
-                    elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
-                        ret.append(e[1:-1])
-                    else:
-                        raise ValueError
-                except ValueError:
-                    ret.append(e)
+        if e[0] == "'" or e[0] == '"':
+            ret.append(e[1:-1])
+        else:
+            ret.append(e)
+    # for e in entries:
+    #     try:
+    #         ei = int(e)
+    #         ret.append(ei)
+    #     except ValueError:
+    #         try:
+    #             ef = float(e)
+    #             ret.append(ef)
+    #         except ValueError:
+    #             try:
+    #                 if type(e) == str and (e == "True" or e == "False"):
+    #                     eb = bool(strtobool(e))
+    #                     ret.append(eb)
+    #                 elif type(e) == str:  # and e[1:-1][:6] == 'torch.':
+    #                     if e[0] == "'" or e[0] == '"':
+    #                         ret.append(e[1:-1])
+    #                     else:
+    #                         ret.append(e)
+    #                 else:
+    #                     raise ValueError
+    #             except ValueError:
+    #                 ret.append(e)
     ret_t = tuple(ret)
     return ret_t
 
@@ -222,6 +230,8 @@ class DejavuStorage:
             cache_json = self.fn_storage[folder_name]
             tmp_used_configs = self.used_configs[folder_name]
         changes_made = False
+        print(timings)
+        print(list(cache.keys()))
         for key, config in cache.items():
             if str(key) in cache_json["cache"]:
                 continue
@@ -281,6 +291,8 @@ class DejavuStorage:
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
         self.used_configs[folder_name] = tmp_used_configs
+        print(ret)
+        print(self.fn_storage[folder_name])
         return ret
 
     def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
