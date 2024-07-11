@@ -229,9 +229,13 @@ class DejavuStorage:
             vals = timings[key]
             if type(vals) is not list:
                 vals = [vals]
+            if len(vals) == 1:
+                labels = ["ms"]
+            else:
+                labels = ["ms", "min_ms", "max_ms"]
             nt = {
                 "values": vals,
-                "lables": ["ms", "min_ms", "max_ms"],
+                "lables": labels,
                 "rep_t_ms": repetitiont,
                 "warmup_t_ms": warmupt,
             }
