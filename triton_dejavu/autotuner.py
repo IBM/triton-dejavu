@@ -27,7 +27,6 @@ import torch
 
 from triton.testing import do_bench, do_bench_cudagraph
 from triton import KernelInterface, Config, OutOfResources
-from triton.language import dtype as triton_dtype
 
 from triton import __version__ as triton_version
 
@@ -294,8 +293,7 @@ class Autotuner(KernelInterface):
             for arg in _args:
                 if hasattr(arg, "dtype"):
                     key.append(str(arg.dtype))
-                # if isinstance(arg, triton_dtype):
-                #     key.append(str(arg))
+            # to avoid encoding conflicts
             key_s = [str(k) for k in key]
             key = tuple(key_s)
             if key not in self.cache:
