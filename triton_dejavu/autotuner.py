@@ -337,7 +337,8 @@ class Autotuner(KernelInterface):
             if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
                 print(
                     f"Triton autotuning for function {self.base_fn.__name__} finished after "
-                    f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]};"
+                    f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
+                    f" evaluated {len(pruned_configs)} configurations;"
                 )
         full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         if config.pre_hook is not None:
