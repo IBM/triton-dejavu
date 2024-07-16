@@ -133,6 +133,10 @@ During generation of the list, configuration options that are only available on 
     ),
 ```
 
+### Configuration passthrough
+
+The autotuner of triton-dejavu checks if the provided `kwargs` of a triton kernel invokation contains configuration parameters. If yes, the autotuner run is skipped and the provided configuration is used. This feature was added for situations where the application can provide configurations in some circumstances and therefore the autotuner has to be disabled in some cases but not all. 
+
 Compatibility
 ------------------
 
