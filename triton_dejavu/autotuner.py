@@ -40,7 +40,7 @@ from triton_dejavu.dejavu_storage import (
 )
 
 
-__additional_config_arg_check__ = ['num_warps', 'num_stages']
+__additional_config_arg_check__ = ['num_warps', 'num_stages', 'num_ctas']
 
 # to be compatible with different triton 3.x versions
 def _all_kwargs(self):
@@ -195,7 +195,7 @@ class Autotuner(KernelInterface):
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             # use 2% as starting point...
-            self.bohb_max_n_trials = min(max(50, 0.02 * self.configs_len), self.configs_len)
+            self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len))
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials}.")
 
@@ -319,18 +319,27 @@ class Autotuner(KernelInterface):
                     return float('nan')
                 triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
                 bench_timings = self._bench(*args, config=triton_config, **kwargs)
+                if self.use_cuda_graph:
+                    return bench_timings
                 return bench_timings[0]
 
-            scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials)
+            scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials, n_workers=1)
             print('starting smac...')
             smac = HyperparameterOptimizationFacade(scenario, eval_config)
-            best_config = smac.optimize()
+            best_config_bohb = smac.optimize()
+            best_config = self.config_space.convert_BohbConfig_to_Triton(best_config_bohb)
             run_history = smac.runhistory
             # tested_configs = run_history.get_configs()
             # trials = [run_history.get_trials(c) for c in tested_configs]  #  list[TrialInfo]
-            result_trial_info = run_history.get_trials(best_config)
-            result_trial_info_str = f"TrialInfo({result_trial_info.instance}, {result_trial_info.seed}, {result_trial_info.budget})"
-            timings = {best_config: result_trial_info_str}
+            # result_trial_info = run_history.get_trials(best_config)[0]
+            result_trial_info = run_history.get_trials(best_config_bohb)
+            result_cost = run_history.get_cost(best_config_bohb)
+            print(result_trial_info)
+            print(result_cost)
+            # result_trial_info_str = f"TrialInfo({result_trial_info.instance}, {result_trial_info.seed}, {result_trial_info.budget})"
+            # timings = {best_config: result_trial_info_str}
+            # timings = {best_config: [0.001]}
+            timings = {best_config: result_cost}
 
         return timings, best_config
 
@@ -667,6 +676,7 @@ class ConfigSpace:
         # self.enable_persistent = False
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
+        self._num_of_invalid_configs = 0
 
     def __str__(self):
         res = []
@@ -697,6 +707,7 @@ class ConfigSpace:
                 # global AND
                 if not condition(kwarg):
                     append = False
+                    self._num_of_invalid_configs += 1
             if append:
                 kwarg_lists.append(kwarg)
         # then cross product with all others
@@ -744,6 +755,7 @@ class ConfigSpace:
         from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
         config_space_dict = {}
         config_space_dict.update(self.kwargs)
+        # TODO: make dynamic
         config_space_dict['num_warps'] = self.num_warps
         config_space_dict['num_stages'] = self.num_stages
         config_space_dict['num_ctas'] = self.num_ctas
@@ -751,14 +763,33 @@ class ConfigSpace:
         return cs
 
     def is_allowed_BohbConfig(self, bohb_config) -> bool:
-        kwarg = bohb_config.values
-        for condition in self.kwarg_conditions:
+        # kwarg = bohb_config
+        kwarg = {}
+        bohb_config_dict = dict(bohb_config)
+        for k in self.kwarg_keys:
+            kwarg[k] = bohb_config_dict[k]
+        print(kwarg)
+        for i, condition in enumerate(self.kwarg_conditions):
             # global AND
             if not condition(kwarg):
+                print(f'config {kwarg} is not allowed (violated condition {i})!')
                 return False
         return True
 
     def convert_BohbConfig_to_Triton(self, bohb_config) -> Config:
         assert triton_major_version >= 3
-        nc = Config(pre_hook=self.pre_hook, **bohb_config.values)
+        # nc = Config(pre_hook=self.pre_hook, **bohb_config)
+        kwarg = {}
+        bohb_config_dict = dict(bohb_config)
+        for k in self.kwarg_keys:
+            kwarg[k] = bohb_config_dict[k]
+        nc = Config(
+            kwarg, 
+            # TODO: make dynamic
+            num_warps=bohb_config_dict['num_warps'],
+            num_ctas=bohb_config_dict['num_ctas'],
+            num_stages=bohb_config_dict['num_stages'],
+            pre_hook=self.pre_hook,
+            )
+        print(nc)
         return nc
