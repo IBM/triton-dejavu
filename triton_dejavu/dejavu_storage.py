@@ -168,7 +168,7 @@ class DejavuStorage:
         for folder_name in self.fn_storage:
             dir_name = f"{self.storage_path}/{folder_name}/"
             if not os.path.exists(dir_name):
-                os.makedirs(self.dir_name, 0o0777)
+                os.makedirs(dir_name, 0o0777)
             file_name = f"{dir_name}/cache.json"
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
