@@ -150,7 +150,7 @@ class DejavuStorage:
         self.storage_prefix = os.environ.get(__storage_env_var__, "none")
         if self.storage_prefix == "none":
             raise Exception(
-                f"The environment variable {__storage_env_var__} must be set for triton-dejavu!"
+                f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
             )
         self.storage_identifier = get_storage_identifier()
         self.storage_path = os.path.abspath(
@@ -168,7 +168,7 @@ class DejavuStorage:
         for folder_name in self.fn_storage:
             dir_name = f"{self.storage_path}/{folder_name}/"
             if not os.path.exists(dir_name):
-                os.makedirs(self.dir_name, 0o0777)
+                os.makedirs(dir_name, 0o0777)
             file_name = f"{dir_name}/cache.json"
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
@@ -181,7 +181,7 @@ class DejavuStorage:
         for folder_name in self.used_configs:
             dir_name = f"{self.storage_path}/{folder_name}/"
             if not os.path.exists(dir_name):
-                os.makedirs(self.dir_name, 0o0777)
+                os.makedirs(dir_name, 0o0777)
             file_name = f"{dir_name}/used_configs.json"
             str_l = [str(c) for c in self.used_configs[folder_name]]
             with open(file_name, "w") as f:

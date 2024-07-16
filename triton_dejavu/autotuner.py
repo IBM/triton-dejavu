@@ -77,6 +77,7 @@ class Autotuner(KernelInterface):
         rep=50,
         use_cuda_graph=False,
         config_space: ConfigSpace = None,
+        use_bo = False,
     ):
         if config_space:
             self.config_space = config_space
@@ -182,6 +183,21 @@ class Autotuner(KernelInterface):
                 print(
                     f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
                 )
+        self.use_bo = use_bo
+        if self.use_bo:
+            if not self.config_space or prune_configs_by:
+                raise Exception(f"[triton-dejavu] BO search can only be used in combination with config_space " 
+                                f"and without prune_configs_by!")
+            # test imports 
+            from ConfigSpace import Configuration, ConfigurationSpace
+            import numpy as np
+            from smac import HyperparameterOptimizationFacade, Scenario
+            # convert config space
+            self.bohb_config_space = self.config_space.get_BohbConfigSpace()
+            # use 2% as starting point...
+            self.bohb_max_n_trials = min(max(50, 0.02 * self.configs_len), self.configs_len)
+            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials}.")
 
     def _get_param_hash(self):
         hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
@@ -282,6 +298,43 @@ class Autotuner(KernelInterface):
                 print(f"ERROR: {e}")
                 return [float("inf"), float("inf"), float("inf")]
 
+    def _run_benchmarks(self, *args, configs, **kwargs):
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            print(f"[triton-dejavu] Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})")
+        if not self.use_bo:
+            timings = {
+                config: self._bench(*args, config=config, **kwargs)
+                for config in configs
+            }
+            best_config = builtins.min(timings, key=timings.get)
+
+        else:
+            from ConfigSpace import Configuration as BohbConfiguration
+            # from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
+            # import numpy as np
+            from smac import HyperparameterOptimizationFacade, Scenario
+
+            def eval_config(config: BohbConfiguration, seed: int = 0) -> float:
+                if not self.config_space.is_allowed_BohbConfig(config):
+                    return float('nan')
+                triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
+                bench_timings = self._bench(*args, config=triton_config, **kwargs)
+                return bench_timings[0]
+
+            scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials)
+            print('starting smac...')
+            smac = HyperparameterOptimizationFacade(scenario, eval_config)
+            best_config = smac.optimize()
+            run_history = smac.runhistory
+            # tested_configs = run_history.get_configs()
+            # trials = [run_history.get_trials(c) for c in tested_configs]  #  list[TrialInfo]
+            result_trial_info = run_history.get_trials(best_config)
+            result_trial_info_str = f"TrialInfo({result_trial_info.instance}, {result_trial_info.seed}, {result_trial_info.budget})"
+            timings = {best_config: result_trial_info_str}
+
+        return timings, best_config
+
+
     def run(self, *args, **kwargs):
         given_kwargs = list(kwargs.keys())
         required_config_args = self.config_kw_names + __additional_config_arg_check__
@@ -314,13 +367,10 @@ class Autotuner(KernelInterface):
                     used_cached_result = False
                     pruned_configs = self.prune_configs(kwargs)
                     bench_start = time.time()
-                    timings = {
-                        config: self._bench(*args, config=config, **kwargs)
-                        for config in pruned_configs
-                    }
+                    timings,  best_config = self._run_benchmarks(*args, configs=pruned_configs, **kwargs)
                     bench_end = time.time()
                     self.bench_time = bench_end - bench_start
-                    self.cache[key] = builtins.min(timings, key=timings.get)
+                    self.cache[key] = best_config 
                     self._timings[key] = timings[self.cache[key]]
                     if (self.use_cuda_graph and self._timings[key] == float("inf")) or (
                         not self.use_cuda_graph and self._timings[key][0] == float("inf")
@@ -458,6 +508,7 @@ def autotune(
     rep=100,
     use_cuda_graph=False,
     config_space=None,
+    use_bo=False,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -512,6 +563,9 @@ def autotune(
     :type rep: int
     :param config_space: The Configuration Space to generate configs from. Only one of configs or config_space can be set.
     :type config_space: triton_dejavu.ConfigSpace
+    :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). 
+                   This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided. 
+    :type use_bo: bool
     """
 
     def decorator(fn):
@@ -529,6 +583,7 @@ def autotune(
             rep,
             use_cuda_graph,
             config_space,
+            use_bo,
         )
 
     return decorator
@@ -604,6 +659,7 @@ class ConfigSpace:
         if kwarg_conditions is None:
             kwarg_conditions = []
         self.kwargs = kwargs_with_lists
+        self.kwarg_keys = list(kwargs_with_lists.keys())
         self.num_warps = num_warps
         self.num_ctas = num_ctas
         self.num_stages = num_stages
@@ -683,3 +739,26 @@ class ConfigSpace:
                 f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}."
             )
         return config_list
+
+    def get_BohbConfigSpace(self):
+        from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
+        config_space_dict = {}
+        config_space_dict.update(self.kwargs)
+        config_space_dict['num_warps'] = self.num_warps
+        config_space_dict['num_stages'] = self.num_stages
+        config_space_dict['num_ctas'] = self.num_ctas
+        cs = BohbConfigurationSpace(config_space_dict)
+        return cs
+
+    def is_allowed_BohbConfig(self, bohb_config) -> bool:
+        kwarg = bohb_config.values
+        for condition in self.kwarg_conditions:
+            # global AND
+            if not condition(kwarg):
+                return False
+        return True
+
+    def convert_BohbConfig_to_Triton(self, bohb_config) -> Config:
+        assert triton_major_version >= 3
+        nc = Config(pre_hook=self.pre_hook, **bohb_config.values)
+        return nc
