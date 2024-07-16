@@ -286,7 +286,7 @@ class Autotuner(KernelInterface):
         given_kwargs = list(kwargs.keys())
         required_config_args = self.config_kw_names + __additional_config_arg_check__
         if any(x in given_kwargs for x in required_config_args):
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             ret = self.fn.run(
                 *args,

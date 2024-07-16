@@ -156,7 +156,9 @@ class DejavuStorage:
         self.storage_path = os.path.abspath(
             f"{self.storage_prefix}/{self.storage_identifier}/"
         )
-        os.system(f"mkdir -p {self.storage_path}")
+        if not os.path.exists(self.storage_path):
+            # 0777 permissions to avoid problems with different users in containers and host system
+            os.makedirs(self.storage_path, 0o0777)
         self.fn_storage = {}
         self.measured_timings = {}
         self._known_files = []
@@ -164,18 +166,30 @@ class DejavuStorage:
 
     def __store__(self):
         for folder_name in self.fn_storage:
-            os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
-            file_name = f"{self.storage_path}/{folder_name}/cache.json"
+            dir_name = f"{self.storage_path}/{folder_name}/"
+            if not os.path.exists(dir_name):
+                os.makedirs(self.dir_name, 0o0777)
+            file_name = f"{dir_name}/cache.json"
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
             with open(file_name, "w") as f:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
+            try:
+                os.chmod(dir_name, 0o0777)
+            except PermissionError as e:
+                print(f"can't set permission of directory {dir_name}: {e}")
         for folder_name in self.used_configs:
-            os.system(f"mkdir -p {self.storage_path}/{folder_name}/")
-            file_name = f"{self.storage_path}/{folder_name}/used_configs.json"
+            dir_name = f"{self.storage_path}/{folder_name}/"
+            if not os.path.exists(dir_name):
+                os.makedirs(self.dir_name, 0o0777)
+            file_name = f"{dir_name}/used_configs.json"
             str_l = [str(c) for c in self.used_configs[folder_name]]
             with open(file_name, "w") as f:
                 json.dump(str_l, f, indent=4)
+            try:
+                os.chmod(dir_name, 0o0777)
+            except PermissionError as e:
+                print(f"can't set permission of directory {dir_name}: {e}")
 
     def add_autotuner_cache(
         self,
