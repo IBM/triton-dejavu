@@ -39,7 +39,7 @@ from triton_dejavu.dejavu_storage import (
     get_string_hash,
 )
 
-
+# TODO: make dynamic
 __additional_config_arg_check__ = ['num_warps', 'num_stages', 'num_ctas']
 
 # to be compatible with different triton 3.x versions
@@ -195,7 +195,7 @@ class Autotuner(KernelInterface):
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             # use 2% as starting point...
-            self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len))
+            self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials}.")
 
@@ -319,6 +319,7 @@ class Autotuner(KernelInterface):
                     return float('nan')
                 triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
                 bench_timings = self._bench(*args, config=triton_config, **kwargs)
+                print(f'_bench returned {bench_timings}')
                 if self.use_cuda_graph:
                     return bench_timings
                 return bench_timings[0]
@@ -326,6 +327,7 @@ class Autotuner(KernelInterface):
             scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials, n_workers=1)
             print('starting smac...')
             smac = HyperparameterOptimizationFacade(scenario, eval_config)
+            # TODO: reset 
             best_config_bohb = smac.optimize()
             best_config = self.config_space.convert_BohbConfig_to_Triton(best_config_bohb)
             run_history = smac.runhistory
