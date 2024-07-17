@@ -197,7 +197,7 @@ class Autotuner(KernelInterface):
             # use 2% as starting point...
             self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials}.")
+                print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} (invalid configs in space: {self.config_space._num_of_invalid_configs}).")
 
     def _get_param_hash(self):
         hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
@@ -326,8 +326,9 @@ class Autotuner(KernelInterface):
 
             scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials, n_workers=1)
             print('starting smac...')
-            smac = HyperparameterOptimizationFacade(scenario, eval_config)
-            # TODO: reset 
+            smac = HyperparameterOptimizationFacade(scenario, eval_config, overwrite=True, dask_client=None)
+            # need to force reset...
+            # smac._optimizer._finished = False
             best_config_bohb = smac.optimize()
             best_config = self.config_space.convert_BohbConfig_to_Triton(best_config_bohb)
             run_history = smac.runhistory
@@ -770,7 +771,7 @@ class ConfigSpace:
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
             kwarg[k] = bohb_config_dict[k]
-        print(kwarg)
+        # print(kwarg)
         for i, condition in enumerate(self.kwarg_conditions):
             # global AND
             if not condition(kwarg):
@@ -793,5 +794,5 @@ class ConfigSpace:
             num_stages=bohb_config_dict['num_stages'],
             pre_hook=self.pre_hook,
             )
-        print(nc)
+        # print(nc)
         return nc
