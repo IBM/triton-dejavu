@@ -29,5 +29,6 @@
 # # avoid dask, so --no-dependencies!
 
 # not possible, so just do
+numpy>=1.23.3
 smac>=2.1.0
 
