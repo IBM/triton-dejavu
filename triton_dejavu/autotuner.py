@@ -198,7 +198,8 @@ class Autotuner(KernelInterface):
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             # use 2% as starting point...
-            self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
+            share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
+            self.bohb_max_n_trials = int(min(max(50, share_of_trials_as_max * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
             self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 'inf'))
             # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 2147483647))
             # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
@@ -277,7 +278,7 @@ class Autotuner(KernelInterface):
                     fast_flush=False,
                 )
             except (OutOfResources, CompileTimeAssertionFailure, RuntimeError) as e:
-                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
                     print(f"[triton-dejavu] testing config '{config}' failed with: '{e}'")
                 return (
                     float("inf")
