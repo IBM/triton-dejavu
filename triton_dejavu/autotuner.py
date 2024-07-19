@@ -361,6 +361,7 @@ class Autotuner(KernelInterface):
             # [1, num_tested_configs], not 0 indexed!! 
             tested_configs = dict(run_history.ids_config)
             results_per_config = dict(run_history._cost_per_config)
+            # print(results_per_config)
             # indexed with TrialKey...
             complete_data_per_config = dict(run_history._data)
             # list(complete_data_per_config.keys())
