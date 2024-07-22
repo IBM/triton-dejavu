@@ -28,7 +28,8 @@ import torch
 import gc
 import traceback
 
-from triton.testing import do_bench, do_bench_cudagraph
+# from triton.testing import do_bench, do_bench_cudagraph
+from triton_dejavu.testing import do_bench, do_bench_cudagraph, KernelEvalCall
 from triton import KernelInterface, Config, OutOfResources
 
 from triton import __version__ as triton_version
@@ -165,12 +166,12 @@ class Autotuner(KernelInterface):
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
-            self.benchmarkig_stream = (
+            self.benchmarking_stream = (
                 torch.cuda.Stream() if self.use_cuda_graph else None
             )
         else:
             self.use_cuda_graph = False
-            self.benchmarkig_stream = None
+            self.benchmarking_stream = None
 
         self._param_hash = self._get_param_hash()
         # self.cache = {}
@@ -269,10 +270,12 @@ class Autotuner(KernelInterface):
         if triton_major_version >= 3:
             try:
                 if self.use_cuda_graph:
-                    with torch.cuda.stream(self.benchmarkig_stream):
-                        bench_res = do_bench_cudagraph(
-                            kernel_call, rep=self.rep_t, return_mode="median"
-                        )
+                    # with torch.cuda.stream(self.benchmarking_stream):
+                        # bench_res = do_bench_cudagraph(
+                        #     kernel_call, rep=self.rep_t, return_mode="median", use_isolated_process=True
+                        # )
+                    kernel_call_obj = KernelEvalCall(self.fn, self.arg_names, self.benchmarking_stream, kernel_call, *args, **current)
+                    bench_res = do_bench_cudagraph(kernel_call_obj, rep=self.rep_t, return_mode='median', use_isolated_process=True)
                     return bench_res
                 return do_bench(
                     kernel_call,
