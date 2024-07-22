@@ -291,10 +291,13 @@ class DejavuStorage:
         )
         return self.used_configs[folder_name]
 
-    def dump_storage(self, filter_timings=False):
+    def print_storage_info(self):
         print(
             f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}"
         )
+
+    def dump_storage(self, filter_timings=False):
+        self.print_storage_info()
         if filter_timings:
             tmp_json = {}
             for k, v in self.fn_storage.items():

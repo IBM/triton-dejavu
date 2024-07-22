@@ -18,12 +18,15 @@
 from __future__ import annotations
 
 import builtins
+import sys
 import os
 import time
 import inspect
 from typing import Dict
 import itertools
 import torch
+import gc
+import traceback
 
 from triton.testing import do_bench, do_bench_cudagraph
 from triton import KernelInterface, Config, OutOfResources
@@ -242,6 +245,7 @@ class Autotuner(KernelInterface):
             if config.pre_hook:
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
+            # print('finished pre_hook')
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
@@ -278,8 +282,13 @@ class Autotuner(KernelInterface):
                     fast_flush=False,
                 )
             except (OutOfResources, CompileTimeAssertionFailure, RuntimeError) as e:
-                if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                     print(f"[triton-dejavu] testing config '{config}' failed with: '{e}'")
+                # trying to avoid/reset CUDA error: an illegal memory access was encountered
+                # gc.collect()
+                # torch.cuda.empty_cache()
+                # torch.cuda.ipc_collect()
+                # traceback.clear_frames(sys.exc_info()[2])
                 return (
                     float("inf")
                     if self.use_cuda_graph
@@ -342,6 +351,7 @@ class Autotuner(KernelInterface):
                 if not self.config_space.is_allowed_BohbConfig(config):
                     return float('nan')
                 triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
+                # print(f'testing {triton_config}')
                 bench_timings = self._bench(*args, config=triton_config, **kwargs)
                 # print(f'_bench returned {bench_timings}')
                 if self.use_cuda_graph:
@@ -362,6 +372,7 @@ class Autotuner(KernelInterface):
             # [1, num_tested_configs], not 0 indexed!! 
             tested_configs = dict(run_history.ids_config)
             results_per_config = dict(run_history._cost_per_config)
+            # print(results_per_config)
             # indexed with TrialKey...
             complete_data_per_config = dict(run_history._data)
             # list(complete_data_per_config.keys())
