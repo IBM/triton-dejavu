@@ -21,12 +21,20 @@ import os
 
 from triton_dejavu import __version__ as dejavu_version
 
+cuda_version = None
+
 
 def _get_cuda_version():
     """Get the CUDA version from nvcc.
 
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
+    global cuda_version
+    if cuda_version is not None:
+        return cuda_version
+    if '_TRITON_DEJAVU_DETERMINED_CUDA_VERSION' in os.environ:
+        cuda_version = os.environ['_TRITON_DEJAVU_DETERMINED_CUDA_VERSION']
+        return cuda_version
     try:
         from torch.utils.cpp_extension import CUDA_HOME
         import subprocess
@@ -39,12 +47,14 @@ def _get_cuda_version():
         nvcc_cuda_version = output[release_idx].split(",")[0]
         cuda_version = nvcc_cuda_version
     except Exception as e:
-        print(f"[INFO] determining cuda version failed with: {e}")
-        cuda_version = os.environ.get("CONTAINER_CUDA_VERSION", "unkown")
-        if cuda_version == "unkown":
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            print(f"[triton-dejavu] determining cuda version failed with: {e}")
+        cuda_version = os.environ.get("CONTAINER_CUDA_VERSION", "unknown")
+        if cuda_version == "unknown":
             raise Exception(
                 "Can't determine cuda version and also CONTAINER_CUDA_VERSION is not set"
             )
+    os.environ['_TRITON_DEJAVU_DETERMINED_CUDA_VERSION'] = cuda_version
     return cuda_version
 
 
