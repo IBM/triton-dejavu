@@ -24,7 +24,55 @@ import time
 import torch
 import torch.multiprocessing as mp
 import io
+from collections import namedtuple
 import triton
+from triton.runtime.driver import driver
+
+
+class SerializeableCompiledKernel(triton.compiler.CompiledKernel):
+
+    def __init__(self, compiled_kernel: triton.compiler.CompiledKernel):
+        self.metadata = compiled_kernel.metadata
+        self.name = compiled_kernel.name
+        self.packed_metadata = compiled_kernel.packed_metadata
+        # self.src = compiled_kernel.src
+        # src is ASTSource, which can't be pickled entirely...but we only need some parts
+        # src.fn.constexprs, constants, src.fn.arg_names, signature
+        # TODO: check for other platforms?
+        # TODO: check for CompiledKernel.launch_metadata
+        ASTSourceLight = namedtuple('ASTSource', sorted(['constants', 'signature', 'fn']))
+        JITFunctionLight = namedtuple('JITFunction', sorted(['constexprs', 'arg_names']))
+        fn_light = JITFunctionLight(constexprs=compiled_kernel.src.fn.constexprs, 
+                                    arg_names=compiled_kernel.src.fn.arg_names)
+        ast_src = ASTSourceLight(fn=fn_light, constants=compiled_kernel.src.constants, signature=compiled_kernel.src.signature)
+        self.src = ast_src
+        # self._ast_src_dict = {'constants': self.src.constants, 'signature': self.src.signature,
+        #                       'fn': {'constexprs': self.src.fn.constexprs, 'arg_names': self.src.fn.arg_names}}
+        self.hash = compiled_kernel.hash
+        self.asm = compiled_kernel.asm
+        self.kernel = compiled_kernel.kernel
+        self.module = None
+        self.function = None
+
+    def __getstate__(self):
+        ast_src_dict = {'constants': self.src.constants, 'signature': self.src.signature,
+                              'fn': {'constexprs': self.src.fn.constexprs, 'arg_names': self.src.fn.arg_names}}
+        state = (self.metadata._asdict(), self.name, self.packed_metadata, ast_src_dict, self.hash,
+                 self.asm, self.kernel, self.module, self.function)
+        return state
+    
+    def __setstate__(self, state): 
+        metadata_dict, self.name, self.packed_metadata, ast_src_dict, self.hash, self.asm, \
+            self.kernel, self.module, self.function = state
+        KernelMetadata = namedtuple('KernelMetadata', sorted(list(metadata_dict.keys())))
+        ASTSourceLight = namedtuple('ASTSource', sorted(list(ast_src_dict.keys())))
+        JITFunctionLight = namedtuple('JITFunction', sorted(list(ast_src_dict['fn'].keys())))
+        self.metadata = KernelMetadata(**metadata_dict)
+        fn_light = JITFunctionLight(**ast_src_dict['fn'])
+        ast_src_dict['fn'] = fn_light
+        ast_src = ASTSourceLight(**ast_src_dict)
+        self.src = ast_src
+        
 
 
 class CompiledKernelRun:
@@ -37,15 +85,16 @@ class CompiledKernelRun:
         # self.stream = stream
         # self.stream = torch.cuda.Stream()
         self.stream = None  # can't be pickled?
-        self.kernel = kernel
+        self.kernel = SerializeableCompiledKernel(kernel)
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
         self.non_constsexpr_vals = non_constexpr_vals
 
-
     def __call__(self):
-        return self.kernel.run(self.grid_0, self.grid_1, self.grid_2, self.stream, self.kernel.function, self.kernel.packed_metadata, 
+        device = driver.active.get_current_device()
+        stream = driver.active.get_current_stream(device)
+        return self.kernel.run(self.grid_0, self.grid_1, self.grid_2, stream, self.kernel.function, self.kernel.packed_metadata, 
                         self.launch_metadata, self.launch_enter_hook, self.launch_exit_hook, *self.non_constsexpr_vals)
 
     def get_stream(self):
@@ -104,7 +153,7 @@ def _do_bench_cudagraph(fn, return_dict, rep=20, grad_to_none=None, return_mode=
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
     try:
-        print("starting _do_bench_cudagraph\n")
+        # print("starting _do_bench_cudagraph...\n")
         assert return_mode in ["min", "max", "mean", "median"]
 
         with torch.cuda.stream(fn.get_stream()):
@@ -193,6 +242,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         _do_bench_cudagraph(fn, return_dict, rep, grad_to_none, return_mode)
         return return_dict['ret']
     else:
+        # TODO make once? reduce overhead...
         mp.set_start_method('spawn', force=True)
         manager=mp.Manager()
         return_dict = manager.dict({'ret': float('nan'), 'stdout': '', 'stderr': ''})
@@ -203,7 +253,8 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         p.start()
         p.join()
         print(f"separated process returned with {return_dict['ret']} (stdout: {return_dict['stdout']})")
-        if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        # if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if 'e' in return_dict and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(f"[triton-dejavu] benchmark process failed with: {return_dict['stderr']}")
         return return_dict['ret']
 
