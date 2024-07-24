@@ -22,7 +22,8 @@ import sys
 import os
 import time
 import torch
-import torch.multiprocessing as mp
+# import torch.multiprocessing as mp
+import multiprocessing as mp
 import io
 from collections import namedtuple
 import triton
@@ -108,7 +109,9 @@ class KernelEvalCall:
 
     def __init__(self, fn, arg_names, benchmarking_stream, call_lambda, *args, **current):
         self.fn = fn
-        self.args = args
+        # self.args = args
+        # Necessary to avoid persistent RuntimeErrors
+        self.args = [a.clone() if isinstance(a, torch.Tensor) else a for a in args]
         self.current = current
         self.arg_names = arg_names
         # run_args = [v for k,v in kernel_call.current.items() if k in arg_names]
@@ -244,7 +247,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
     else:
         # TODO make once? reduce overhead...
         mp.set_start_method('spawn', force=True)
-        manager=mp.Manager()
+        manager = mp.Manager()
         return_dict = manager.dict({'ret': float('nan'), 'stdout': '', 'stderr': ''})
         # from torch.multiprocessing.spawn import spawn
         # mp.spawn(_do_bench_cudagraph, args=(fn, return_dict, rep, grad_to_none, return_mode, True), nprocs=1, join=True, start_method='spawn')
@@ -252,11 +255,15 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         p = mp.Process(target=_do_bench_cudagraph, args=(compiled_fn, return_dict, rep, grad_to_none, return_mode, True))
         p.start()
         p.join()
-        print(f"separated process returned with {return_dict['ret']} (stdout: {return_dict['stdout']})")
+        ret = return_dict['ret']
+        print(f"separated process returned with {ret} (stdout: {return_dict['stdout']})")
         # if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
         if 'e' in return_dict and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(f"[triton-dejavu] benchmark process failed with: {return_dict['stderr']}")
-        return return_dict['ret']
+            raise Exception(str(return_dict['e']))
+        p.close()
+        manager.shutdown()
+        return ret
 
 
 def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, fast_flush=True, return_mode="mean"):
