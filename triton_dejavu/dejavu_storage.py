@@ -247,7 +247,7 @@ class DejavuStorage:
                 tmp_used_configs.append(config)
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(f"[triton-dejavu] added {str(config)} for {fn_hash}")
+                print(f"[triton-dejavu] added {str(config)} for {fn_hash} and key {key}")
         if changes_made:
             cache_json["total_bench_time_s"] += bench_time
             self.fn_storage[folder_name] = cache_json
@@ -279,7 +279,7 @@ class DejavuStorage:
             if c not in tmp_used_configs:
                 tmp_used_configs.append(c)
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(f"[triton-dejavu] restored {str(c)} for {fn_hash}")
+                print(f"[triton-dejavu] restored {str(c)} for {fn_hash} and key {kt}")
         self.used_configs[folder_name] = tmp_used_configs
         return ret
 
