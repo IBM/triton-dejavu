@@ -21,6 +21,7 @@ import builtins
 import sys
 import os
 import time
+import numpy as np
 import torch
 # import torch.multiprocessing as mp
 import multiprocessing as mp
@@ -28,6 +29,10 @@ import io
 from collections import namedtuple
 import triton
 from triton.runtime.driver import driver
+
+
+#__separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
+__separate_process_dump_file__ = '/storage/tmp/dejavu-mp-dump.log'
 
 
 class SerializeableCompiledKernel(triton.compiler.CompiledKernel):
@@ -117,6 +122,7 @@ class KernelEvalCall:
         # run_args = [v for k,v in kernel_call.current.items() if k in arg_names]
         self.benchmarking_stream = benchmarking_stream
         self.call_lambda = call_lambda
+        self.compiled_kernel = None
 
     def __call__(self):
         # TODO: config pre hook, post hook
@@ -145,14 +151,27 @@ class KernelEvalCall:
 
         # kernel.run(grid_0, grid_1, grid_2, stream, kernel.function, kernel.packed_metadata, launch_metadata,
         #            self.fn.CompiledKernel.launch_enter_hook, self.fn.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
-        compiled_kernel = CompiledKernelRun(grid_0, grid_1, grid_2, self.benchmarking_stream, kernel, launch_metadata,
+        self.compiled_kernel = CompiledKernelRun(grid_0, grid_1, grid_2, self.benchmarking_stream, kernel, launch_metadata,
                                             self.fn.CompiledKernel.launch_enter_hook, self.fn.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
         
-        return compiled_kernel
+        return self.compiled_kernel
+
+    def cleanup(self):
+        for a in self.args:
+            if isinstance(a, torch.Tensor):
+                del a
+        del self.args
+        del self.compiled_kernel
 
 
 def _do_bench_cudagraph(fn, return_dict, rep=20, grad_to_none=None, return_mode="mean", redirect_io=False):
     if redirect_io:
+        # redirect below python level
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            # os.dup2(os.open(os.devnull, os.O_RDWR), 1)
+            # os.dup2(os.open(os.devnull, os.O_RDWR), 2)
+            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 1)
+            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 2)
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
     try:
@@ -225,7 +244,7 @@ def test_f(return_dict):
 
 
 
-def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_isolated_process=False):
+def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_isolated_process=False, run_id=0, path_prefix='tmp'):
     """
     Benchmark the runtime of the provided function.
 
@@ -243,6 +262,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         # equivalent to trtion upstream
         return_dict = {'ret': float('nan')}
         _do_bench_cudagraph(fn, return_dict, rep, grad_to_none, return_mode)
+        fn.cleanup()
         return return_dict['ret']
     else:
         # TODO make once? reduce overhead...
@@ -252,6 +272,12 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         # from torch.multiprocessing.spawn import spawn
         # mp.spawn(_do_bench_cudagraph, args=(fn, return_dict, rep, grad_to_none, return_mode, True), nprocs=1, join=True, start_method='spawn')
         compiled_fn = fn.get_compiled_run()
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            dir_name = os.path.dirname(__separate_process_dump_file__)
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name, 0o0777)
+            if not os.path.isfile(__separate_process_dump_file__):
+                open(__separate_process_dump_file__, 'a').close()
         p = mp.Process(target=_do_bench_cudagraph, args=(compiled_fn, return_dict, rep, grad_to_none, return_mode, True))
         p.start()
         p.join()
@@ -261,8 +287,22 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         if 'e' in return_dict and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(f"[triton-dejavu] benchmark process failed with: {return_dict['stderr']}")
             raise Exception(str(return_dict['e']))
+        if not np.isnan(ret):
+            tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}.npy"
+            target_tensor = compiled_fn.non_constsexpr_vals[2].cpu().numpy()
+            if os.path.exists(tensor_path):
+                # then we compare our result to existing:
+                compare_tensor = np.load(tensor_path)
+                if not np.allclose(compare_tensor, target_tensor):
+                    print("result of separate process differ...")
+            else:
+                dir_name = os.path.dirname(tensor_path)
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name, 0o0777)
+                np.save(tensor_path, target_tensor)
         p.close()
         manager.shutdown()
+        fn.cleanup()
         return ret
 
 

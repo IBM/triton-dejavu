@@ -96,6 +96,8 @@ class Autotuner(KernelInterface):
             else:
                 self.configs = configs
         self.configs_hash = get_config_list_hash(self.configs)
+        self.run_id = 0
+        self._obj_hash = hash(self)
         # the key hash is not covered by fn.hash!
         self.key_hash = get_list_hash(key)
         self.configs_len = len(self.configs)
@@ -275,7 +277,8 @@ class Autotuner(KernelInterface):
                     # with torch.cuda.stream(self.benchmarking_stream):
                     #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
                     kernel_call_obj = KernelEvalCall(self.fn, self.arg_names, self.benchmarking_stream, kernel_call, *args, **current)
-                    bench_res = do_bench_cudagraph(kernel_call_obj, rep=self.rep_t, return_mode='median', use_isolated_process=True)
+                    bench_res = do_bench_cudagraph(kernel_call_obj, rep=self.rep_t, return_mode='median', 
+                                                   use_isolated_process=True, run_id=self.run_id, path_prefix=str(self._obj_hash))
                     return bench_res
                 return upstream_do_bench(
                     kernel_call,
@@ -411,6 +414,7 @@ class Autotuner(KernelInterface):
             # for i, r in self._restore_args.items():
             #         args[i].copy_(r)
 
+        self.run_id += 1
         return timings, best_config
 
 
