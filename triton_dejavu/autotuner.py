@@ -177,20 +177,6 @@ class Autotuner(KernelInterface):
             self.use_cuda_graph = False
             self.benchmarking_stream = None
 
-        self._param_hash = self._get_param_hash()
-        # self.cache = {}
-        self.cache = global_dejavu_storage.restore_autotuner_cache(
-            fn, self.configs_hash, self.key_hash, self._param_hash
-        )
-        if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
-            self.configs = global_dejavu_storage.get_used_configs(
-                fn, self.configs_hash, self.key_hash, self._param_hash
-            )
-            # important, don't update configs_hash
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(
-                    f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
-                )
         self.use_bo = use_bo
         if self.use_bo:
             if not self.config_space or prune_configs_by:
@@ -213,9 +199,26 @@ class Autotuner(KernelInterface):
             # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} and max walltime to {self.bohb_max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs}).")
+        
+        self._param_hash = self._get_param_hash()
+        # self.cache = {}
+        self.cache = global_dejavu_storage.restore_autotuner_cache(
+            fn, self.configs_hash, self.key_hash, self._param_hash
+        )
+        if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
+            self.configs = global_dejavu_storage.get_used_configs(
+                fn, self.configs_hash, self.key_hash, self._param_hash
+            )
+            # important, don't update configs_hash
+            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                print(
+                    f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
+                )
 
     def _get_param_hash(self):
-        hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
+        # hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
+        hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} " \
+             f"bo_max_trials {self.bohb_max_n_trials} bo_timeout {self.bohb_max_search_time_s}"
         # not relevant
         # hs += get_list_hash(self.reset_idx)
         # hs += get_list_hash(self.restore_idx)
