@@ -360,7 +360,7 @@ class Autotuner(KernelInterface):
                 if not self.config_space.is_allowed_BohbConfig(config):
                     return float('nan')
                 triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
-                print(f'testing {triton_config}')
+                print(f'\ntesting {triton_config}')
                 # Necessary to avoid persistent RuntimeErrors
                 # args_copy = [a.clone() if isinstance(a, torch.Tensor) else a for a in args]
                 # bench_timings = self._bench(*args_copy, config=triton_config, **kwargs)

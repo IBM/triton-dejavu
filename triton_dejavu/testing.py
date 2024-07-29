@@ -29,6 +29,7 @@ import io
 from collections import namedtuple
 import triton
 from triton.runtime.driver import driver
+import gc
 
 
 #__separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
@@ -157,11 +158,14 @@ class KernelEvalCall:
         return self.compiled_kernel
 
     def cleanup(self):
-        for a in self.args:
-            if isinstance(a, torch.Tensor):
-                del a
-        del self.args
-        del self.compiled_kernel
+        if hasattr(self, 'args'):
+            for a in self.args:
+                if isinstance(a, torch.Tensor):
+                    del a
+            del self.args
+        if hasattr(self, 'compiled_kernel'):
+            del self.compiled_kernel
+        gc.collect()
 
 
 def _do_bench_cudagraph(fn, return_dict, rep=20, grad_to_none=None, return_mode="mean", redirect_io=False):
@@ -230,6 +234,9 @@ def _do_bench_cudagraph(fn, return_dict, rep=20, grad_to_none=None, return_mode=
     except Exception as e:
         print(f'bench_cudagraph failed with {e}')
         return_dict['e'] = e
+    fn.cleanup()
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
     if redirect_io:
         return_dict['stdout'] = sys.stdout.getvalue()
         return_dict['stderr'] = sys.stdout.getvalue()
@@ -265,6 +272,9 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         fn.cleanup()
         return return_dict['ret']
     else:
+        free_m, total_m = torch.cuda.mem_get_info()
+        GB_u = 1024 * 1024 * 1024
+        print(f"current memory: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. ")
         # TODO make once? reduce overhead...
         mp.set_start_method('spawn', force=True)
         manager = mp.Manager()
@@ -282,27 +292,41 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
         p.start()
         p.join()
         ret = return_dict['ret']
-        print(f"separated process returned with {ret} (stdout: {return_dict['stdout']})")
+        print(f"separated process returned with {ret} [run {run_id:06d}] (stdout: {return_dict['stdout']})")
         # if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-        if 'e' in return_dict and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            print(f"[triton-dejavu] benchmark process failed with: {return_dict['stderr']}")
-            raise Exception(str(return_dict['e']))
+        if (np.isnan(ret) or 'e' in return_dict) and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            e = return_dict.get('e', '(unknown)')
+            print(f"[triton-dejavu] benchmark process failed with: {e}; {return_dict['stderr']}")
+            # raise Exception(str(return_dict['e']))
+            print("trying to kill the process...")
+            # kill is necessary after `Triton Error [CUDA]: an illegal memory access was encountered;` ??
+            #   doesn't work...
+            p.kill()
         if not np.isnan(ret):
             tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}.npy"
             target_tensor = compiled_fn.non_constsexpr_vals[2].cpu().numpy()
             if os.path.exists(tensor_path):
                 # then we compare our result to existing:
                 compare_tensor = np.load(tensor_path)
-                if not np.allclose(compare_tensor, target_tensor):
-                    print("result of separate process differ...")
+                # if not np.allclose(compare_tensor, target_tensor):
+                #     print("result of separate process differ...")
+                # ATOL = 1e-2
+                ATOL = 0.015  # TODO: suffficient? how to generalize?
+                triton.testing.assert_close(compare_tensor, target_tensor, atol=ATOL, rtol=0)
             else:
                 dir_name = os.path.dirname(tensor_path)
                 if not os.path.exists(dir_name):
                     os.makedirs(dir_name, 0o0777)
                 np.save(tensor_path, target_tensor)
+        # this is required to free all associated GPU memory if `fn.cleanup()` couldn't/wasn't executed at the GPU side
+        # (close is not enough)
+        p.terminate()
         p.close()
         manager.shutdown()
+        # to cleanup copy on this side
         fn.cleanup()
+        del fn
+        gc.collect()
         return ret
 
 
