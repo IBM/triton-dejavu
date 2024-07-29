@@ -18,14 +18,20 @@
 from __future__ import annotations
 
 import builtins
+import sys
 import os
 import time
 import inspect
 from typing import Dict
 import itertools
 import torch
+import gc
+import traceback
 
-from triton.testing import do_bench, do_bench_cudagraph
+# from triton.testing import do_bench, do_bench_cudagraph
+from triton.testing import do_bench as upstream_do_bench
+from triton.testing import do_bench_cudagraph as upstream_do_bench_cudagraph
+from triton_dejavu.testing import do_bench, do_bench_cudagraph, KernelEvalCall
 from triton import KernelInterface, Config, OutOfResources
 
 from triton import __version__ as triton_version
@@ -90,6 +96,8 @@ class Autotuner(KernelInterface):
             else:
                 self.configs = configs
         self.configs_hash = get_config_list_hash(self.configs)
+        self.run_id = 0
+        self._obj_hash = hash(self)
         # the key hash is not covered by fn.hash!
         self.key_hash = get_list_hash(key)
         self.configs_len = len(self.configs)
@@ -162,12 +170,12 @@ class Autotuner(KernelInterface):
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
-            self.benchmarkig_stream = (
+            self.benchmarking_stream = (
                 torch.cuda.Stream() if self.use_cuda_graph else None
             )
         else:
             self.use_cuda_graph = False
-            self.benchmarkig_stream = None
+            self.benchmarking_stream = None
 
         self._param_hash = self._get_param_hash()
         # self.cache = {}
@@ -198,7 +206,8 @@ class Autotuner(KernelInterface):
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             # use 2% as starting point...
-            self.bohb_max_n_trials = int(min(max(50, 0.02 * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
+            share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
+            self.bohb_max_n_trials = int(min(max(50, share_of_trials_as_max * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
             self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 'inf'))
             # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 2147483647))
             # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
@@ -241,6 +250,7 @@ class Autotuner(KernelInterface):
             if config.pre_hook:
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
+            # print('finished pre_hook')
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
@@ -264,12 +274,13 @@ class Autotuner(KernelInterface):
         if triton_major_version >= 3:
             try:
                 if self.use_cuda_graph:
-                    with torch.cuda.stream(self.benchmarkig_stream):
-                        bench_res = do_bench_cudagraph(
-                            kernel_call, rep=self.rep_t, return_mode="median"
-                        )
+                    # with torch.cuda.stream(self.benchmarking_stream):
+                    #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
+                    kernel_call_obj = KernelEvalCall(self.fn, self.arg_names, self.benchmarking_stream, kernel_call, *args, **current)
+                    bench_res = do_bench_cudagraph(kernel_call_obj, rep=self.rep_t, return_mode='median', 
+                                                   use_isolated_process=True, run_id=self.run_id, path_prefix=str(self._obj_hash))
                     return bench_res
-                return do_bench(
+                return upstream_do_bench(
                     kernel_call,
                     warmup=self.warmup_t,
                     rep=self.rep_t,
@@ -279,6 +290,11 @@ class Autotuner(KernelInterface):
             except (OutOfResources, CompileTimeAssertionFailure, RuntimeError) as e:
                 if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                     print(f"[triton-dejavu] testing config '{config}' failed with: '{e}'")
+                # trying to avoid/reset CUDA error: an illegal memory access was encountered
+                # gc.collect()
+                # torch.cuda.empty_cache()
+                # torch.cuda.ipc_collect()
+                # traceback.clear_frames(sys.exc_info()[2])
                 return (
                     float("inf")
                     if self.use_cuda_graph
@@ -293,7 +309,7 @@ class Autotuner(KernelInterface):
                 )
         else:
             try:
-                return do_bench(
+                return upstream_do_bench(
                     kernel_call,
                     warmup=self.warmup_t,
                     rep=self.rep_t,
@@ -337,15 +353,23 @@ class Autotuner(KernelInterface):
             import warnings
             warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
+            # # self._restore_args = {i:a.clone() if isinstance(a, torch.Tensor) else i:a for i, a in enumerate(args)}
+            # self._restore_args = {i : a.clone() for i, a in enumerate(args) if isinstance(a, torch.Tensor)}
+
             def eval_config(config: BohbConfiguration, seed: int = 0) -> float:
                 if not self.config_space.is_allowed_BohbConfig(config):
                     return float('nan')
                 triton_config = self.config_space.convert_BohbConfig_to_Triton(config)
+                print(f'\ntesting {triton_config}')
+                # Necessary to avoid persistent RuntimeErrors
+                # args_copy = [a.clone() if isinstance(a, torch.Tensor) else a for a in args]
+                # bench_timings = self._bench(*args_copy, config=triton_config, **kwargs)
                 bench_timings = self._bench(*args, config=triton_config, **kwargs)
-                # print(f'_bench returned {bench_timings}')
+                print(f'_bench returned {bench_timings}')
                 if self.use_cuda_graph:
                     return bench_timings
                 return bench_timings[0]
+        
 
             smac_scenario = Scenario(self.bohb_config_space, deterministic=True, n_trials=self.bohb_max_n_trials, 
                                 walltime_limit=self.bohb_max_search_time_s, n_workers=1)
@@ -368,6 +392,7 @@ class Autotuner(KernelInterface):
             total_smac_run_time = smac_facade.optimizer.used_walltime
             total_optimizer_time = smac_facade.optimizer.used_target_function_walltime
             failed_configs = [cid for cid, v in results_per_config.items() if (np.isnan(v) or np.isinf(v))]
+            worked_configs = [cid for cid, v in results_per_config.items() if not (np.isnan(v) or np.isinf(v))]
             # print(failed_configs)
             # tested_configs = run_history.get_configs()
             # trials = [run_history.get_trials(c) for c in tested_configs]  #  list[TrialInfo]
@@ -383,7 +408,13 @@ class Autotuner(KernelInterface):
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
                       f"of which {len(failed_configs)} failed.")
+                print(f"failed ids: {failed_configs}")
+                print(f"worked ids: {worked_configs}")
+            
+            # for i, r in self._restore_args.items():
+            #         args[i].copy_(r)
 
+        self.run_id += 1
         return timings, best_config
 
 
