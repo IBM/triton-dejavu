@@ -302,6 +302,9 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
             # kill is necessary after `Triton Error [CUDA]: an illegal memory access was encountered;` ??
             #   doesn't work...
             p.kill()
+            free_m, total_m = torch.cuda.mem_get_info()
+            GB_u = 1024 * 1024 * 1024
+            print(f"after kill: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. ")
         if not np.isnan(ret):
             tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}.npy"
             target_tensor = compiled_fn.non_constsexpr_vals[2].cpu().numpy()
