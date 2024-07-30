@@ -293,7 +293,8 @@ class DejavuStorage:
 
     def print_storage_info(self):
         print(
-            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}"
+            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}\n" \
+            f"\tknown storage keys: {list(self.fn_storage.keys())}"
         )
 
     def dump_storage(self, filter_timings=False):
