@@ -250,8 +250,9 @@ def test_f(return_dict):
     return_dict['stdout'] = sys.stdout
 
 
-
-def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_isolated_process=False, run_id=0, path_prefix='tmp'):
+def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", 
+                       use_isolated_process=False, run_id=0, path_prefix='tmp', 
+                       verify_out_index=None):
     """
     Benchmark the runtime of the provided function.
 
@@ -305,9 +306,9 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean", use_is
             free_m, total_m = torch.cuda.mem_get_info()
             GB_u = 1024 * 1024 * 1024
             print(f"after kill: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. ")
-        if not np.isnan(ret):
-            tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}.npy"
-            target_tensor = compiled_fn.non_constsexpr_vals[2].cpu().numpy()
+        if not np.isnan(ret) and verify_out_index is not None:
+            tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}-idx{verify_out_index}.npy"
+            target_tensor = compiled_fn.non_constsexpr_vals[verify_out_index].cpu().numpy()
             if os.path.exists(tensor_path):
                 # then we compare our result to existing:
                 compare_tensor = np.load(tensor_path)
