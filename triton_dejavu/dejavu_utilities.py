@@ -32,8 +32,8 @@ def _get_cuda_version():
     global cuda_version
     if cuda_version is not None:
         return cuda_version
-    if '_TRITON_DEJAVU_DETERMINED_CUDA_VERSION' in os.environ:
-        cuda_version = os.environ['_TRITON_DEJAVU_DETERMINED_CUDA_VERSION']
+    if "_TRITON_DEJAVU_DETERMINED_CUDA_VERSION" in os.environ:
+        cuda_version = os.environ["_TRITON_DEJAVU_DETERMINED_CUDA_VERSION"]
         return cuda_version
     try:
         from torch.utils.cpp_extension import CUDA_HOME
@@ -54,7 +54,7 @@ def _get_cuda_version():
             raise Exception(
                 "Can't determine cuda version and also CONTAINER_CUDA_VERSION is not set"
             )
-    os.environ['_TRITON_DEJAVU_DETERMINED_CUDA_VERSION'] = cuda_version
+    os.environ["_TRITON_DEJAVU_DETERMINED_CUDA_VERSION"] = cuda_version
     return cuda_version
 
 

@@ -36,8 +36,9 @@ def find_version(filepath: str) -> str:
     Adapted from https://github.com/vllm-project/vllm/blob/717f4bcea036a049e86802b3a05dd6f7cd17efc8/setup.py
     """
     with open(filepath) as fp:
-        version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]",
-                                  fp.read(), re.M)
+        version_match = re.search(
+            r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M
+        )
         if version_match:
             return version_match.group(1)
         raise RuntimeError("Unable to find version string.")
@@ -45,10 +46,10 @@ def find_version(filepath: str) -> str:
 
 setup(
     name="triton_dejavu",
-    version=find_version(os.path.join(PROJECT_ROOT, 'triton_dejavu/__init__.py')),
+    version=find_version(os.path.join(PROJECT_ROOT, "triton_dejavu/__init__.py")),
     use_scm_version=True,
     description="Framework to try to reduce triton overhead to (close to) 0 for well known deployments.",
-    long_description=read(PROJECT_ROOT, 'README.md'),
+    long_description=read(PROJECT_ROOT, "README.md"),
     long_description_content_type="text/markdown",
     author="Burkhard Ringlein",
     python_requires=">=3.8",
