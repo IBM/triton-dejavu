@@ -84,6 +84,7 @@ class Autotuner(KernelInterface):
         use_cuda_graph=False,
         config_space: ConfigSpace = None,
         use_bo = False,
+        fallback_heuristic = None,
     ):
         if config_space:
             self.config_space = config_space
@@ -214,6 +215,7 @@ class Autotuner(KernelInterface):
                 print(
                     f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
                 )
+        self.fallback_heuristic = fallback_heuristic
 
     def _get_param_hash(self):
         # hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
@@ -280,8 +282,12 @@ class Autotuner(KernelInterface):
                     # with torch.cuda.stream(self.benchmarking_stream):
                     #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
                     kernel_call_obj = KernelEvalCall(self.fn, self.arg_names, self.benchmarking_stream, kernel_call, *args, **current)
+                    use_isolated_process = False 
+                    if os.environ.get('TRITON_DEJAVU_USE_ISOLATED_PROCESS', '0') == '1':
+                        use_isolated_process = True
                     bench_res = do_bench_cudagraph(kernel_call_obj, rep=self.rep_t, return_mode='median', 
-                                                   use_isolated_process=True, run_id=self.run_id, path_prefix=str(self._obj_hash))
+                                                   use_isolated_process=use_isolated_process, run_id=self.run_id, 
+                                                   path_prefix=str(self._obj_hash))
                     return bench_res
                 return upstream_do_bench(
                     kernel_call,
@@ -447,25 +453,30 @@ class Autotuner(KernelInterface):
                         key.append(str(arg.dtype))
                 # to avoid encoding conflicts
                 key_s = [str(k) for k in key]
+                key_orig = key
                 key = tuple(key_s)
                 if key not in self.cache:
-                    # prune configs
-                    used_cached_result = False
-                    pruned_configs = self.prune_configs(kwargs)
-                    bench_start = time.time()
-                    timings,  best_config = self._run_benchmarks(*args, configs=pruned_configs, **kwargs)
-                    bench_end = time.time()
-                    self.bench_time = bench_end - bench_start
-                    self.cache[key] = best_config 
-                    self._timings[key] = timings[self.cache[key]]
-                    if (self.use_cuda_graph and self._timings[key] == float("inf")) or (
-                        not self.use_cuda_graph and self._timings[key][0] == float("inf")
-                    ):
-                        raise RuntimeError(
-                            f"All autotune examples failed (timing is {self._timings[key]})."
-                        )
-                    self.configs_timings = timings
-                    self.pre_hook(args, reset_only=True)
+                    if os.environ.get('TRITON_DEJAVU_FORCE_FALLBACK', '0') == '0':
+                        # prune configs
+                        used_cached_result = False
+                        pruned_configs = self.prune_configs(kwargs)
+                        bench_start = time.time()
+                        timings,  best_config = self._run_benchmarks(*args, configs=pruned_configs, **kwargs)
+                        bench_end = time.time()
+                        self.bench_time = bench_end - bench_start
+                        self.cache[key] = best_config 
+                        self._timings[key] = timings[self.cache[key]]
+                        if (self.use_cuda_graph and self._timings[key] == float("inf")) or (
+                            not self.use_cuda_graph and self._timings[key][0] == float("inf")
+                        ):
+                            raise RuntimeError(
+                                f"All autotune examples failed (timing is {self._timings[key]})."
+                            )
+                        self.configs_timings = timings
+                        self.pre_hook(args, reset_only=True)
+                    else:
+                        self.cache[key] = self.fallback_heuristic(key_orig)
+                        print(f'[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}.')
                 config = self.cache[key]
             else:
                 config = self.configs[0]
@@ -595,6 +606,7 @@ def autotune(
     use_cuda_graph=False,
     config_space=None,
     use_bo=False,
+    fallback_heuristic=None,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -652,6 +664,8 @@ def autotune(
     :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). 
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided. 
     :type use_bo: bool
+    :param fallback_heuristic: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
+    :type fallback_heursitic: callable(key)
     """
 
     def decorator(fn):
@@ -670,6 +684,7 @@ def autotune(
             use_cuda_graph,
             config_space,
             use_bo,
+            fallback_heuristic,
         )
 
     return decorator
