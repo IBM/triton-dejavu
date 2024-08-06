@@ -279,9 +279,11 @@ class DejavuStorage:
             ret[kt] = c
             if c not in tmp_used_configs:
                 tmp_used_configs.append(c)
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}")
         self.used_configs[folder_name] = tmp_used_configs
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            print(f"[triton-dejavu] restored {len(ret)} configurations for {folder_name}.")
         return ret
 
     def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
