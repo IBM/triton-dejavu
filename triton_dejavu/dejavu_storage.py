@@ -248,7 +248,9 @@ class DejavuStorage:
                 tmp_used_configs.append(config)
             changes_made = True
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(f"[triton-dejavu] added {str(config)} for {folder_name} and key {key}")
+                print(
+                    f"[triton-dejavu] added {str(config)} for {folder_name} and key {key}"
+                )
         if changes_made:
             cache_json["total_bench_time_s"] += bench_time
             self.fn_storage[folder_name] = cache_json
@@ -282,10 +284,14 @@ class DejavuStorage:
             if c not in tmp_used_configs:
                 tmp_used_configs.append(c)
             if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
-                print(f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}")
+                print(
+                    f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
+                )
         self.used_configs[folder_name] = tmp_used_configs
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            print(f"[triton-dejavu] restored {len(ret)} configurations for {folder_name}.")
+            print(
+                f"[triton-dejavu] restored {len(ret)} configurations for {folder_name}."
+            )
         return ret
 
     def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
@@ -298,7 +304,7 @@ class DejavuStorage:
 
     def print_storage_info(self):
         print(
-            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}\n" \
+            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}\n"
             f"\tknown storage keys: {list(self.fn_storage.keys())}"
         )
 
