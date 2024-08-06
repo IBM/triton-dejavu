@@ -53,6 +53,7 @@ This repository contains two example Triton kernels in the `tests` directory usi
 docker build -f tests/Dockerfile . -t test-triton-dejavu
 
 # create a directory to read & write the autotuner cache
+mkdir dejavu-data/
 chmod o+rw dejavu-data/
 
 # run the container
