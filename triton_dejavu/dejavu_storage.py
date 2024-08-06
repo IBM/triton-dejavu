@@ -266,6 +266,8 @@ class DejavuStorage:
         )
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
+            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                print(f"[triton-dejavu] No configurations found for {folder_name}.")
             return {}
         if cache_file not in self._known_files:
             self._known_files.append(cache_file)
