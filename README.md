@@ -1,12 +1,12 @@
 Triton Deja-vu
 =================
-Framework to reduce the autotuner overhead of [triton-lang](https://github.com/triton-lang/triton) to (close to) 0 for well known deployments.
+Framework to reduce autotune overhead of [triton-lang](https://github.com/triton-lang/triton) to zero for well known deployments.
 
 This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes two features to the Triton community:
 1. Store and safely restore autotuner states using JSON files. 
 2. `ConfigSpaces` to explore a defined space exhaustively.
 
-(more details see [below](#features))
+Additonally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
 
 
 Installation
