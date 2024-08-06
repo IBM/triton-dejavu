@@ -59,3 +59,8 @@ docs/sg_execution_times.rst
 *.egg-info*
 
 
+# triton-dejavu
+
+dejavu-data/
+
+

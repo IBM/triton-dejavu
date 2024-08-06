@@ -25,6 +25,8 @@ import inspect
 from typing import Dict
 import itertools
 import torch
+
+# TODO: still necessary?
 import gc
 import traceback
 
@@ -531,9 +533,10 @@ class Autotuner(KernelInterface):
                         self.pre_hook(args, reset_only=True)
                     else:
                         self.cache[key] = self.fallback_heuristic(key_orig)
-                        print(
-                            f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
-                        )
+                        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                            print(
+                                f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
+                            )
                 config = self.cache[key]
             else:
                 config = self.configs[0]

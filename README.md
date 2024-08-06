@@ -1,12 +1,12 @@
 Triton Deja-vu
 =================
-Framework to reduce the autotuner overhead of [triton-lang](https://github.com/triton-lang/triton) to (close to) 0 for well known deployments.
+Framework to reduce autotune overhead of [triton-lang](https://github.com/triton-lang/triton) to zero for well known deployments.
 
 This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes two features to the Triton community:
 1. Store and safely restore autotuner states using JSON files. 
 2. `ConfigSpaces` to explore a defined space exhaustively.
 
-(more details see [below](#features))
+Additonally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
 
 
 Installation
@@ -53,6 +53,7 @@ This repository contains two example Triton kernels in the `tests` directory usi
 docker build -f tests/Dockerfile . -t test-triton-dejavu
 
 # create a directory to read & write the autotuner cache
+mkdir dejavu-data/
 chmod o+rw dejavu-data/
 
 # run the container
@@ -137,9 +138,38 @@ During generation of the list, configuration options that are only available on 
 
 The autotuner of triton-dejavu checks if the provided `kwargs` of a triton kernel invokation contains configuration parameters. If yes, the autotuner run is skipped and the provided configuration is used. This feature was added for situations where the application can provide configurations in some circumstances and therefore the autotuner has to be disabled in some cases but not all. 
 
+### Fallback heuristic
+
+To avoid additional latency of an autotuner run, triton-dejavu allows the restoring of previous autotuner caches. However, these caches may not contain all possible combinations of the autotuner keys. To avoid the random trigger of autotuner runs in latency-sensitive environments, users can provide heuristics to compute the configuration values with the flag `fallback_heuristic` (similarly to the [`@triton.heuristics` decorator](https://github.com/triton-lang/triton/blob/194a00f0f54ecd85dba202d840242c5f3f72b068/python/triton/runtime/autotuner.py#L340-L358)).
+The provided heuristic is used if there is 1) no corresponding entry to the current `key`-tuple **and** 2) the environment variable `TRITON_DEJAVU_FORCE_FALLBACK=1` is set. 
+The heuristic callable is then called with the current `key`-tuple as argument. 
+
+```
+@triton_dejavu.autotune(
+    ...
+    fallback_heuristic = lambda key: triton.Config({'BLOCK_SIZE': 2048 if key[1] <= 128 else 4096}, num_warps=16, num_stages=2),
+    ...
+```
+
+If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message about the use and outcome of the heuristic is printed. 
+
+
 Compatibility
 ------------------
 
 Triton-dejavu is currently compatible (and tested) with triton versions 2.2 and newer.
+
+
+Environment variables
+--------------------------
+
+Triton-dejavu can be configured with the following environment variables:
+
+- `TRITON_DEJAVU_STORAGE = <some-path>`: The path to the triton-dejavu storage folder (this environment variable *must be set*!). 
+- `TRITON_PRINT_AUTOTUNING`: Logs the result of the autotune process (as upstream triton).
+- `TRITON_DEJAVU_FORCE_FALLBACK = 1`: See [fallback heuristic](#fallback-heuristic).
+- `TRITON_DEJAVU_DEBUG = 1`: Prints debug messages.
+- `TRITON_DEJAVU_DEBUG_DEBUG = 1`: Prints more debug messages (This will be replaced with logger levels in the future). 
+- `TRITON_DEJAVU_USE_ONLY_RESTORED = 1`: Forces the autotuner to just re-evaluate the configurations that were part of the restored autotuner cache in case a new autotuner run (for a new `key`-tuple) is triggered. This could speed up autotuner evaluations by just considering already tried-and-tested configurations out of a bigger configuration space. 
 
 
