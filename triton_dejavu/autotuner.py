@@ -83,8 +83,10 @@ class Autotuner(KernelInterface):
         rep=50,
         use_cuda_graph=False,
         config_space: ConfigSpace = None,
-        use_bo = False,
         fallback_heuristic = None,
+        use_bo = False,
+        bo_max_search_t=180,
+        bo_max_share=1.0,
     ):
         if config_space:
             self.config_space = config_space
@@ -193,9 +195,10 @@ class Autotuner(KernelInterface):
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             # use 2% as starting point...
-            share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
-            self.bohb_max_n_trials = int(min(max(50, share_of_trials_as_max * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
-            self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 'inf'))
+            # share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
+            self.bohb_max_n_trials = int(min(max(50, bo_max_share * self.configs_len), self.configs_len)) + self.config_space._num_of_invalid_configs
+            # self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 'inf'))
+            self.bohb_max_search_time_s = bo_max_search_t
             # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 2147483647))
             # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
@@ -605,8 +608,10 @@ def autotune(
     rep=100,
     use_cuda_graph=False,
     config_space=None,
-    use_bo=False,
     fallback_heuristic=None,
+    use_bo=False,
+    bo_max_search_t=180,
+    bo_max_share=1.0,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -661,11 +666,15 @@ def autotune(
     :type rep: int
     :param config_space: The Configuration Space to generate configs from. Only one of configs or config_space can be set.
     :type config_space: triton_dejavu.ConfigSpace
+    :param fallback_heuristic: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
+    :type fallback_heursitic: callable(key)
     :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). 
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided. 
     :type use_bo: bool
-    :param fallback_heuristic: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
-    :type fallback_heursitic: callable(key)
+    :param bo_max_search_t: Maximum search time (in seconds) for BO.
+    :type bo_max_search_t: int
+    :param bo_max_share: Maximum percentage of the total config space BO can search through. This translates into a maximum trial number for the optimizer.
+    :type bo_max_share: float
     """
 
     def decorator(fn):
@@ -683,8 +692,10 @@ def autotune(
             rep,
             use_cuda_graph,
             config_space,
-            use_bo,
             fallback_heuristic,
+            use_bo,
+            bo_max_search_t,
+            bo_max_share,
         )
 
     return decorator
