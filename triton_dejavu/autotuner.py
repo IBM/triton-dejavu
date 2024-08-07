@@ -101,6 +101,9 @@ class Autotuner(KernelInterface):
                 self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
             else:
                 self.configs = configs
+        # TODO: is pre-hook captured?
+        #  no, it is not part of Config.__str__
+        #  maybe not relevant?
         self.configs_hash = get_config_list_hash(self.configs)
         self.run_id = 0
         self._obj_hash = hash(self)
@@ -485,6 +488,9 @@ class Autotuner(KernelInterface):
         if any(x in given_kwargs for x in required_config_args):
             if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
+            # TODO: call pre_hook or kwargs['pre_hook']?
+            # if config.pre_hook is not None:
+            #     config.pre_hook(full_nargs)
             ret = self.fn.run(
                 *args,
                 **kwargs,
@@ -563,6 +569,7 @@ class Autotuner(KernelInterface):
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
+                # print('config pre hook executed')
             if triton_major_version >= 3:
                 if not hasattr(config, "all_kwargs"):
                     config.all_kwargs = lambda: _all_kwargs(config)
