@@ -489,8 +489,8 @@ class Autotuner(KernelInterface):
             if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             # TODO: call pre_hook or kwargs['pre_hook']?
-            # if config.pre_hook is not None:
-            #     config.pre_hook(full_nargs)
+            if 'pre_hook' in kwargs and kwargs['pre_hook'] is not None:
+                kwargs['pre_hook'](*args, **kwargs)
             ret = self.fn.run(
                 *args,
                 **kwargs,
