@@ -430,51 +430,55 @@ class Autotuner(KernelInterface):
             )
             # need to force reset...
             # smac._optimizer._finished = False
-            best_config_bohb = smac_facade.optimize()
 
-            best_config = self.config_space.convert_BohbConfig_to_Triton(
-                best_config_bohb
-            )
-            run_history = smac_facade.runhistory
-            num_tested_configs = run_history.finished
-            # [1, num_tested_configs], not 0 indexed!!
-            tested_configs = dict(run_history.ids_config)
-            results_per_config = dict(run_history._cost_per_config)
-            # print(results_per_config)
-            # indexed with TrialKey...
-            complete_data_per_config = dict(run_history._data)
-            # list(complete_data_per_config.keys())
-            total_smac_run_time = smac_facade.optimizer.used_walltime
-            total_optimizer_time = smac_facade.optimizer.used_target_function_walltime
-            failed_configs = [
-                cid
-                for cid, v in results_per_config.items()
-                if (np.isnan(v) or np.isinf(v))
-            ]
-            worked_configs = [
-                cid
-                for cid, v in results_per_config.items()
-                if not (np.isnan(v) or np.isinf(v))
-            ]
-            # print(failed_configs)
-            # tested_configs = run_history.get_configs()
-            # trials = [run_history.get_trials(c) for c in tested_configs]  #  list[TrialInfo]
-            # result_trial_info = run_history.get_trials(best_config)[0]
-            result_trial_info = run_history.get_trials(best_config_bohb)
-            result_cost = run_history.get_cost(best_config_bohb)
-            # print(result_trial_info)
-            # print(result_cost)
-            # result_trial_info_str = f"TrialInfo({result_trial_info.instance}, {result_trial_info.seed}, {result_trial_info.budget})"
-            # timings = {best_config: result_trial_info_str}
-            # timings = {best_config: [0.001]}
-            timings = {best_config: result_cost}
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                print(
-                    f"[triton-dejavu] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
-                    f"of which {len(failed_configs)} failed."
+            # TODO
+            result_cost = float('inf')
+            while np.isinf(result_cost):
+                best_config_bohb = smac_facade.optimize()
+
+                best_config = self.config_space.convert_BohbConfig_to_Triton(
+                    best_config_bohb
                 )
-                print(f"failed ids: {failed_configs}")
-                print(f"worked ids: {worked_configs}")
+                run_history = smac_facade.runhistory
+                num_tested_configs = run_history.finished
+                # [1, num_tested_configs], not 0 indexed!!
+                tested_configs = dict(run_history.ids_config)
+                results_per_config = dict(run_history._cost_per_config)
+                # print(results_per_config)
+                # indexed with TrialKey...
+                complete_data_per_config = dict(run_history._data)
+                # list(complete_data_per_config.keys())
+                total_smac_run_time = smac_facade.optimizer.used_walltime
+                total_optimizer_time = smac_facade.optimizer.used_target_function_walltime
+                failed_configs = [
+                    cid
+                    for cid, v in results_per_config.items()
+                    if (np.isnan(v) or np.isinf(v))
+                ]
+                worked_configs = [
+                    cid
+                    for cid, v in results_per_config.items()
+                    if not (np.isnan(v) or np.isinf(v))
+                ]
+                # print(failed_configs)
+                # tested_configs = run_history.get_configs()
+                # trials = [run_history.get_trials(c) for c in tested_configs]  #  list[TrialInfo]
+                # result_trial_info = run_history.get_trials(best_config)[0]
+                result_trial_info = run_history.get_trials(best_config_bohb)
+                result_cost = run_history.get_cost(best_config_bohb)
+                # print(result_trial_info)
+                # print(result_cost)
+                # result_trial_info_str = f"TrialInfo({result_trial_info.instance}, {result_trial_info.seed}, {result_trial_info.budget})"
+                # timings = {best_config: result_trial_info_str}
+                # timings = {best_config: [0.001]}
+                timings = {best_config: result_cost}
+                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                    print(
+                        f"[triton-dejavu] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
+                        f"of which {len(failed_configs)} failed."
+                    )
+                    print(f"failed ids: {failed_configs}")
+                    print(f"worked ids: {worked_configs}")
 
             # for i, r in self._restore_args.items():
             #         args[i].copy_(r)
