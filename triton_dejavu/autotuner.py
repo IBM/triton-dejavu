@@ -450,10 +450,13 @@ class Autotuner(KernelInterface):
             result_cost = float('inf')
             total_trials = 0
             while np.isinf(result_cost) and total_trials < self.bohb_max_repeat:
-                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1" and total_trials > 0:
-                    print(
-                        f"[triton-dejavu] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
-                    )
+                if total_trials > 0:
+                    smac_scenario.n_trials += self.bohb_max_n_trials
+                    smac_scenario.walltime_limit += self.bohb_max_search_time_s
+                    if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                        print(
+                            f"[triton-dejavu] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
+                        )
                 best_config_bohb = smac_facade.optimize()
 
                 best_config = self.config_space.convert_BohbConfig_to_Triton(
