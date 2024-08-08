@@ -192,6 +192,7 @@ class KernelEvalCall:
     def get_compiled_run(self) -> CompiledKernelRun:
         # kernel = self.fn.run(*self.args, warmup=True, **self.current)
         self.current["warmup"] = True
+        compile_start = time.time()
         kernel = self.fn.run(*self.args, **self.current)
         (
             bound_args,
@@ -200,6 +201,7 @@ class KernelEvalCall:
             non_constexpr_vals,
             excess_kwargs,
         ) = self.fn.binder(*self.args, **self.current)
+        compile_end = time.time()
 
         # device = triton.runtime.driver.active.get_current_device()
         # stream = triton.runtime.driver.active.get_current_stream(device)
@@ -227,6 +229,12 @@ class KernelEvalCall:
             self.fn.CompiledKernel.launch_exit_hook,
             *non_constexpr_vals,
         )
+        wrapper_end = time.time()
+        compile_time = compile_end - compile_start
+        wrapper_time = wrapper_end - compile_end
+        
+        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            print(f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s")
 
         return self.compiled_kernel
 
@@ -383,7 +391,7 @@ def do_bench_cudagraph(
         p.join()
         ret = return_dict["ret"]
         print(
-            f"separated process returned with {ret} [run {run_id:06d}] (stdout: {return_dict['stdout']})"
+            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] separated process returned with {ret} [run {run_id:06d}] (stdout: {return_dict['stdout']})"
         )
         # if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
         if (np.isnan(ret) or "e" in return_dict) and os.environ.get(
@@ -391,7 +399,7 @@ def do_bench_cudagraph(
         ) == "1":
             e = return_dict.get("e", "(unknown)")
             print(
-                f"[triton-dejavu] benchmark process failed with: {e}; {return_dict['stderr']}"
+                f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] benchmark process failed with: {e}; {return_dict['stderr']}"
             )
             # raise Exception(str(return_dict['e']))
             print("trying to kill the process...")

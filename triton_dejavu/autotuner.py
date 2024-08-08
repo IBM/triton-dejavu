@@ -384,7 +384,7 @@ class Autotuner(KernelInterface):
             self._update_triton_cache_path()
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(
-                f"[triton-dejavu] Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})"
+                f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}]  Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})"
             )
         if not self.use_bo:
             timings = {
@@ -457,7 +457,7 @@ class Autotuner(KernelInterface):
                     smac_scenario.walltime_limit += self.bohb_max_search_time_s
                     if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                         print(
-                            f"[triton-dejavu] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
+                            f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
                         )
                 best_config_bohb = smac_facade.optimize()
 
@@ -499,7 +499,7 @@ class Autotuner(KernelInterface):
                 timings = {best_config: result_cost}
                 if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                     print(
-                        f"[triton-dejavu] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
+                        f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
                         f"of which {len(failed_configs)} failed."
                     )
                     print(f"failed ids: {failed_configs}")
@@ -590,7 +590,7 @@ class Autotuner(KernelInterface):
                     self.bench_time,
                 )
                 if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
-                    print(
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
                         f"Triton autotuning for function {self.base_fn.__name__} finished after "
                         f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
                         f" evaluated {len(pruned_configs)} configurations;"
