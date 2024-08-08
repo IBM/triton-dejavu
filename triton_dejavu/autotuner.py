@@ -90,6 +90,7 @@ class Autotuner(KernelInterface):
         use_bo=False,
         bo_max_search_t=180,
         bo_max_share=1.0,
+        bo_max_repeat=1,
     ):
         if config_space:
             self.config_space = config_space
@@ -217,6 +218,7 @@ class Autotuner(KernelInterface):
                 print(
                     f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} and max walltime to {self.bohb_max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
                 )
+            self.bohb_max_repeat = bo_max_repeat
 
         self._param_hash = self._get_param_hash()
         # self.cache = {}
@@ -433,7 +435,8 @@ class Autotuner(KernelInterface):
 
             # TODO
             result_cost = float('inf')
-            while np.isinf(result_cost):
+            total_trials = 0
+            while np.isinf(result_cost) and total_trials < self.bohb_max_repeat:
                 best_config_bohb = smac_facade.optimize()
 
                 best_config = self.config_space.convert_BohbConfig_to_Triton(
@@ -479,7 +482,7 @@ class Autotuner(KernelInterface):
                     )
                     print(f"failed ids: {failed_configs}")
                     print(f"worked ids: {worked_configs}")
-
+                total_trials += 1
             # for i, r in self._restore_args.items():
             #         args[i].copy_(r)
 
@@ -680,6 +683,7 @@ def autotune(
     use_bo=False,
     bo_max_search_t=180,
     bo_max_share=1.0,
+    bo_max_repeat=1,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -764,6 +768,7 @@ def autotune(
             use_bo,
             bo_max_search_t,
             bo_max_share,
+            bo_max_repeat,
         )
 
     return decorator
