@@ -239,8 +239,9 @@ class Autotuner(KernelInterface):
         self.fallback_heuristic = fallback_heuristic
 
         # triton cache
-        self._update_triton_cache_path()
-        set_triton_cache_manager()
+        if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
+            self._update_triton_cache_path()
+            set_triton_cache_manager()
 
 
     def _get_param_hash(self):
@@ -379,7 +380,8 @@ class Autotuner(KernelInterface):
                 return [float("inf"), float("inf"), float("inf")]
 
     def _run_benchmarks(self, *args, configs, **kwargs):
-        self._update_triton_cache_path()
+        if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
+            self._update_triton_cache_path()
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(
                 f"[triton-dejavu] Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})"
