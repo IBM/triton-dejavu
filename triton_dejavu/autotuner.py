@@ -46,6 +46,8 @@ from triton_dejavu.dejavu_storage import (
     get_list_hash,
     get_string_hash,
 )
+from triton_dejavu.cache_manager import set_triton_cache_manager
+
 
 # TODO: make dynamic
 __additional_config_arg_check__ = ["num_warps", "num_stages", "num_ctas"]
@@ -236,6 +238,11 @@ class Autotuner(KernelInterface):
                 )
         self.fallback_heuristic = fallback_heuristic
 
+        # triton cache
+        self._update_triton_cache_path()
+        set_triton_cache_manager()
+
+
     def _get_param_hash(self):
         # hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
         hs = (
@@ -250,6 +257,10 @@ class Autotuner(KernelInterface):
         #  maybe not relevant since should not influence the autotuner result
         h = get_string_hash(hs)
         return h
+
+    def _update_triton_cache_path(self):
+        run_id_str = f"{self._obj_hash}-{self.run_id}"
+        os.environ['TRITON_DEJAVU_INSTANCE_RUN_ID'] = run_id_str
 
     def _bench(self, *args, config, **meta):
         if triton_major_version >= 3:
@@ -367,6 +378,7 @@ class Autotuner(KernelInterface):
                 return [float("inf"), float("inf"), float("inf")]
 
     def _run_benchmarks(self, *args, configs, **kwargs):
+        self._update_triton_cache_path()
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(
                 f"[triton-dejavu] Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})"
