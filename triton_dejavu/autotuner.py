@@ -245,10 +245,11 @@ class Autotuner(KernelInterface):
 
     def _get_param_hash(self):
         # hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
-        hs = (
-            f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
-            f"bo_max_trials {self.bohb_max_n_trials} bo_timeout {self.bohb_max_search_time_s}"
-        )
+        hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
+        # hs = (
+        #     f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
+        #     f"bo_max_trials {self.bohb_max_n_trials} bo_timeout {self.bohb_max_search_time_s}"
+        # )
         # not relevant
         # hs += get_list_hash(self.reset_idx)
         # hs += get_list_hash(self.restore_idx)
