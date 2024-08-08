@@ -56,7 +56,7 @@ class CustomCacheManager(FileCacheManager):
             if self.cache_dir:
                 run_id = os.getenv("TRITON_DEJAVU_INSTANCE_RUN_ID", '000000-00000')
                 self.cache_dir = f"{self.cache_dir}_{os.getpid()}_{run_id}"
-                print(f"setting triton cache dir to {self.cache_dir}")
+                # print(f"setting triton cache dir to {self.cache_dir}")
                 self.cache_dir = os.path.join(self.cache_dir, self.key)
                 self.lock_path = os.path.join(self.cache_dir, "lock")
                 os.makedirs(self.cache_dir, exist_ok=True)
