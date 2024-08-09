@@ -289,7 +289,7 @@ class Autotuner(KernelInterface):
             if config.pre_hook:
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
-            # print('finished pre_hook')
+            print('finished pre_hook')
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
@@ -434,31 +434,36 @@ class Autotuner(KernelInterface):
                     return bench_timings
                 return bench_timings[0]
 
-            smac_scenario = Scenario(
-                self.bohb_config_space,
-                deterministic=True,
-                n_trials=self.bohb_max_n_trials,
-                walltime_limit=self.bohb_max_search_time_s,
-                n_workers=1,
-            )
-            # print('starting smac...')
-            smac_facade = HyperparameterOptimizationFacade(
-                smac_scenario, eval_config, overwrite=True, dask_client=None
-            )
-            # need to force reset...
-            # smac._optimizer._finished = False
-
             # TODO
             result_cost = float('inf')
             total_trials = 0
+            n_trials = self.bohb_max_n_trials
+            walltime_limit = self.bohb_max_search_time_s
+            overwrite = True
             while np.isinf(result_cost) and total_trials < self.bohb_max_repeat:
                 if total_trials > 0:
-                    smac_scenario.n_trials += self.bohb_max_n_trials
-                    smac_scenario.walltime_limit += self.bohb_max_search_time_s
+                    n_trials += self.bohb_max_n_trials
+                    walltime_limit += self.bohb_max_search_time_s
+                    overwrite = False
                     if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                         print(
                             f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
                         )
+ 
+                smac_scenario = Scenario(
+                    self.bohb_config_space,
+                    deterministic=True,
+                    n_trials=n_trials,
+                    walltime_limit=walltime_limit,
+                    n_workers=1,
+                )
+                # print('starting smac...')
+                smac_facade = HyperparameterOptimizationFacade(
+                    smac_scenario, eval_config, overwrite=overwrite, dask_client=None
+                )
+                # need to force reset...
+                # smac._optimizer._finished = False
+
                 best_config_bohb = smac_facade.optimize()
 
                 best_config = self.config_space.convert_BohbConfig_to_Triton(
