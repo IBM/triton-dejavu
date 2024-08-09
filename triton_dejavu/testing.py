@@ -31,6 +31,7 @@ from collections import namedtuple
 import triton
 from triton.runtime.driver import driver
 import gc
+import traceback
 
 
 # __separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
@@ -126,6 +127,7 @@ class CompiledKernelRun:
         grid_1,
         grid_2,
         stream,
+        # pre_hook,
         kernel,
         launch_metadata,
         launch_enter_hook,
@@ -138,6 +140,7 @@ class CompiledKernelRun:
         # self.stream = stream
         # self.stream = torch.cuda.Stream()
         self.stream = None  # can't be pickled?
+        # self.pre_hook = pre_hook
         self.kernel = SerializeableCompiledKernel(kernel)
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
@@ -147,6 +150,8 @@ class CompiledKernelRun:
     def __call__(self):
         device = driver.active.get_current_device()
         stream = driver.active.get_current_stream(device)
+        # if self.pre_hook:
+        #     self.pre_hook()
         return self.kernel.run(
             self.grid_0,
             self.grid_1,
@@ -168,7 +173,7 @@ class CompiledKernelRun:
 
 class KernelEvalCall:
     def __init__(
-        self, fn, arg_names, benchmarking_stream, call_lambda, *args, **current
+        self, fn, arg_names, benchmarking_stream, cur_config, call_lambda, *args, **current
     ):
         self.fn = fn
         # self.args = args
@@ -180,17 +185,35 @@ class KernelEvalCall:
         self.benchmarking_stream = benchmarking_stream
         self.call_lambda = call_lambda
         self.compiled_kernel = None
+        self.cur_config = cur_config
 
     def __call__(self):
         # TODO: config pre hook, post hook
         # return self.fn.run(*self.args, **self.current)
         return self.call_lambda()
 
+    def _call_pre_hook(self):
+        # must be done before binding...so not separated...
+        pre_hook = self.cur_config.pre_hook if self.cur_config.pre_hook else None
+        if not pre_hook:
+            return
+        print(f"[triton-dejavu] Executing pre_hook of config {self.cur_config}...")
+        prehook_start = time.time()
+        nargs = dict(zip(self.arg_names, self.args))
+        full_nargs = {**nargs, **self.current}
+        pre_hook(full_nargs)
+        prehook_end = time.time()
+        prehook_duration = prehook_end - prehook_start
+        print(f"\t...pre_hook done ({prehook_duration}s).")
+
     def get_stream(self):
         return self.benchmarking_stream
 
     def get_compiled_run(self) -> CompiledKernelRun:
         # kernel = self.fn.run(*self.args, warmup=True, **self.current)
+        # need to call pre-hook first...
+        self._call_pre_hook()        
+        
         self.current["warmup"] = True
         compile_start = time.time()
         kernel = self.fn.run(*self.args, **self.current)
@@ -262,7 +285,7 @@ def _do_bench_cudagraph(
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
     try:
-        # print("starting _do_bench_cudagraph...\n")
+        print("starting _do_bench_cudagraph...\n")
         assert return_mode in ["min", "max", "mean", "median"]
 
         with torch.cuda.stream(fn.get_stream()):
@@ -318,7 +341,10 @@ def _do_bench_cudagraph(
             return_dict["ret"] = getattr(torch, return_mode)(times).item()
     except Exception as e:
         print(f"bench_cudagraph failed with {e}")
-        return_dict["e"] = e
+        # return_dict["e"] = e
+        tb = traceback.format_exc()
+        return_dict["e"] = f'Exception {e}; traceback: {tb}'
+        print(tb)
     fn.cleanup()
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()

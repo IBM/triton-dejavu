@@ -224,8 +224,9 @@ class Autotuner(KernelInterface):
 
         self._param_hash = self._get_param_hash()
         # self.cache = {}
+        all_pre_hook = self.config_space.get_global_pre_hook() if self.config_space is not None else None
         self.cache = global_dejavu_storage.restore_autotuner_cache(
-            fn, self.configs_hash, self.key_hash, self._param_hash
+            fn, self.configs_hash, self.key_hash, self._param_hash, all_pre_hook=all_pre_hook
         )
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
             self.configs = global_dejavu_storage.get_used_configs(
@@ -319,6 +320,7 @@ class Autotuner(KernelInterface):
                         self.fn,
                         self.arg_names,
                         self.benchmarking_stream,
+                        config,
                         kernel_call,
                         *args,
                         **current,
@@ -326,6 +328,8 @@ class Autotuner(KernelInterface):
                     use_isolated_process = False
                     if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
                         use_isolated_process = True
+                        # NOTE: if a config.pre_hook exists, it will be executed in the parent process
+                        #  but with already cloned arges (not possible to pickle an unbound kernel)
                     bench_res = do_bench_cudagraph(
                         kernel_call_obj,
                         rep=self.rep_t,
@@ -603,7 +607,7 @@ class Autotuner(KernelInterface):
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
-                # print('config pre hook executed')
+                print('config pre hook executed')
             if triton_major_version >= 3:
                 if not hasattr(config, "all_kwargs"):
                     config.all_kwargs = lambda: _all_kwargs(config)
@@ -998,3 +1002,6 @@ class ConfigSpace:
         )
         # print(nc)
         return nc
+
+    def get_global_pre_hook(self):
+        return self.pre_hook
