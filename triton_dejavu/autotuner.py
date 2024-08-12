@@ -530,7 +530,11 @@ class Autotuner(KernelInterface):
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             # TODO: call pre_hook or kwargs['pre_hook']?
             if 'pre_hook' in kwargs and kwargs['pre_hook'] is not None:
-                kwargs['pre_hook'](*args, **kwargs)
+                nargs = dict(zip(self.arg_names, args))
+                full_args = {**nargs, **kwargs}
+                kwargs['pre_hook'](full_args)
+                # to avoid KeyError: 'Keyword argument pre_hook was specified but unrecognised'
+                del kwargs['pre_hook']
             ret = self.fn.run(
                 *args,
                 **kwargs,
