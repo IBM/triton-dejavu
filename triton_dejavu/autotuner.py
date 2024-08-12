@@ -241,6 +241,8 @@ class Autotuner(KernelInterface):
 
         # triton cache
         if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
+            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                print(f"[triton-dejavu] Triton cache isolation activated.")
             self._update_triton_cache_path()
             set_triton_cache_manager()
 
@@ -388,7 +390,7 @@ class Autotuner(KernelInterface):
             self._update_triton_cache_path()
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             print(
-                f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}]  Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo})"
+                f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}]  Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo}, run: {self.run_id})"
             )
         if not self.use_bo:
             timings = {
