@@ -285,7 +285,7 @@ def _do_bench_cudagraph(
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
     try:
-        print("starting _do_bench_cudagraph...\n")
+        # print("starting _do_bench_cudagraph...\n")
         assert return_mode in ["min", "max", "mean", "median"]
 
         with torch.cuda.stream(fn.get_stream()):

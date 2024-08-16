@@ -292,7 +292,7 @@ class Autotuner(KernelInterface):
             if config.pre_hook:
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
-            print('finished pre_hook')
+            # print('finished pre_hook')
             if triton_major_version >= 3:
                 self.fn.run(
                     *args,
