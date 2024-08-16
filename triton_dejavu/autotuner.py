@@ -561,6 +561,8 @@ class Autotuner(KernelInterface):
                 key_orig = key
                 key = tuple(key_s)
                 if key not in self.cache:
+                    if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                        print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                     if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0":
                         # prune configs
                         used_cached_result = False
@@ -616,7 +618,7 @@ class Autotuner(KernelInterface):
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
-                print('config pre hook executed')
+                # print('config pre hook executed')
             if triton_major_version >= 3:
                 if not hasattr(config, "all_kwargs"):
                     config.all_kwargs = lambda: _all_kwargs(config)
