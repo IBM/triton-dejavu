@@ -405,6 +405,7 @@ class Autotuner(KernelInterface):
             # from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
             import numpy as np
             from smac import HyperparameterOptimizationFacade, Scenario
+            from smac.acquisition.function.expected_improvement import EI
 
             # config/silence loggers...
             # 10 = DEBUG, 30 = WARNING, 40 = ERROR
@@ -464,8 +465,10 @@ class Autotuner(KernelInterface):
                     n_workers=1,
                 )
                 # print('starting smac...')
+                exploration_EI = EI(xi=0.04)
                 smac_facade = HyperparameterOptimizationFacade(
-                    smac_scenario, eval_config, overwrite=overwrite, dask_client=None
+                    smac_scenario, eval_config, overwrite=overwrite, dask_client=None,
+                    acquisition_function=exploration_EI
                 )
                 # need to force reset...
                 # smac._optimizer._finished = False
