@@ -1002,13 +1002,15 @@ class ConfigSpace:
         kwarg = {}
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
-            kwarg[k] = bohb_config_dict[k]
+            # TODO: other types possible?
+            kwarg[k] = int(bohb_config_dict[k])
         nc = Config(
             kwarg,
-            # TODO: make dynamic
-            num_warps=bohb_config_dict["num_warps"],
-            num_ctas=bohb_config_dict["num_ctas"],
-            num_stages=bohb_config_dict["num_stages"],
+            # TODO: make parameter names dynamic
+            # TODO: other types possible?
+            num_warps=int(bohb_config_dict["num_warps"]),
+            num_ctas=int(bohb_config_dict["num_ctas"]),
+            num_stages=int(bohb_config_dict["num_stages"]),
             pre_hook=self.pre_hook,
         )
         # print(nc)
