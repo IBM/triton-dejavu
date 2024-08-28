@@ -60,6 +60,17 @@ __config_args__ = (
 __skip_config_args__ = ["enable_persistent"]
 
 
+def _get_cache_template(fn, configs_len=0):
+    ret = {
+        "signature": str(fn),
+        "total_bench_time_s": 0.0,
+        "evaluated_configs": configs_len,
+        "cache": {},
+        "timings": {},
+    }
+    return ret
+
+
 def _create_config_args(v):
     vlist = v.split(", ")
     ret = {"kwargs": {}}
@@ -210,13 +221,7 @@ class DejavuStorage:
             fn_name, fn_hash, configs_hash, key_hash, param_hash
         )
         if folder_name not in self.fn_storage:
-            cache_json = {
-                "signature": str(fn),
-                "total_bench_time_s": 0.0,
-                "evaluated_configs": configs_len,
-                "cache": {},
-                "timings": {},
-            }
+            cache_json = _get_cache_template(fn, configs_len)
             tmp_used_configs = []
         else:
             # TODO: reload content to avoid overwriting in case of parallel processes?
@@ -268,6 +273,10 @@ class DejavuStorage:
         if not os.path.isfile(cache_file):
             if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                 print(f"[triton-dejavu] No configurations found for {folder_name}.")
+            # create cache file early
+            cache_json = _get_cache_template(fn)
+            self.fn_storage[folder_name] = cache_json
+            self.__store__()
             return {}
         if cache_file not in self._known_files:
             self._known_files.append(cache_file)
