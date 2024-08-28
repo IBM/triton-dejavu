@@ -189,18 +189,6 @@ class DejavuStorage:
                 os.chmod(dir_name, 0o0777)
             except PermissionError as e:
                 print(f"can't set permission of directory {dir_name}: {e}")
-        for folder_name in self.used_configs:
-            dir_name = f"{self.storage_path}/{folder_name}/"
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, 0o0777)
-            file_name = f"{dir_name}/used_configs.json"
-            str_l = [str(c) for c in self.used_configs[folder_name]]
-            with open(file_name, "w") as f:
-                json.dump(str_l, f, indent=4)
-            try:
-                os.chmod(dir_name, 0o0777)
-            except PermissionError as e:
-                print(f"can't set permission of directory {dir_name}: {e}")
 
     def add_autotuner_cache(
         self,
