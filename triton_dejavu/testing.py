@@ -32,7 +32,9 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
-import signal
+# import signal
+# import ctypes
+# from distutils import sysconfig
 
 
 # __separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
@@ -40,6 +42,16 @@ __separate_process_dump_file__ = "/storage/tmp/dejavu-mp-dump.log"
 __jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
 if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
     print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
+
+# # __so_lib_name__ = 'sigalarm.so'
+# __so_lib_name__ = f"sigalarm{sysconfig.get_config_var('EXT_SUFFIX')}"
+# # we need to go up 2 levels...
+# __so_lib_path__ = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), __so_lib_name__)
+# _c_sigalarm_so_ = ctypes.CDLL(__so_lib_path__)
+# 
+# 
+# def handle_timeout(signum, frame):
+#     raise TimeoutError()
 
 
 class SerializeableCompiledKernel(triton.compiler.CompiledKernel):
@@ -175,10 +187,6 @@ class CompiledKernelRun:
         return new_stream
 
 
-def handle_timeout(signum, frame):
-    raise TimeoutError()
-
-
 class KernelEvalCall:
     def __init__(
         self, fn, arg_names, benchmarking_stream, cur_config, call_lambda, *args, **current
@@ -203,15 +211,22 @@ class KernelEvalCall:
         if not self._jit_was_triggered:
             self._jit_was_triggered = True
             def jit_with_timeout():
-                signal.signal(signal.SIGALRM, handle_timeout)
-                signal.alarm(self._jit_timeout_s)
-                try:
-                    ret = self.call_lambda()
-                except TimeoutError as e:
-                    print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
-                    ret = None
-                finally:
-                    signal.alarm(0)
+                # signal.signal(signal.SIGALRM, handle_timeout)
+                # signal.alarm(self._jit_timeout_s)
+                # signal.signal(signal.SIGTRAP, handle_timeout)
+                # _c_sigalarm_so_.setAlarmHandler(ctypes.c_int(self._jit_timeout_s))
+                # try:
+                compile_start = time.time()
+                ret = self.call_lambda()
+                compile_end = time.time()
+                compile_time = compile_end - compile_start
+                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                    print(f"[triton-dejavu] First execution including JIT compilation took {compile_time}s.")
+                # except TimeoutError as e:
+                #     print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
+                #     ret = None
+                # finally:
+                #     signal.alarm(0)
                 return ret
             
             return jit_with_timeout()
@@ -242,21 +257,23 @@ class KernelEvalCall:
         
         self.current["warmup"] = True
         compile_start = time.time()
-        signal.signal(signal.SIGALRM, handle_timeout)
-        signal.alarm(self._jit_timeout_s)
-        try:
-            kernel = self.fn.run(*self.args, **self.current)
-            (
-                bound_args,
-                sig_and_spec,
-                constexpr_vals,
-                non_constexpr_vals,
-                excess_kwargs,
-            ) = self.fn.binder(*self.args, **self.current)
-        except TimeoutError as e:
-            print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
-        finally:
-            signal.alarm(0)
+        # signal.signal(signal.SIGALRM, handle_timeout)
+        # signal.alarm(self._jit_timeout_s)
+        # signal.signal(signal.SIGTERM, handle_timeout)
+        # _c_sigalarm_so_.setAlarmHandler(ctypes.c_int(self._jit_timeout_s))
+        # try:
+        kernel = self.fn.run(*self.args, **self.current)
+        (
+            bound_args,
+            sig_and_spec,
+            constexpr_vals,
+            non_constexpr_vals,
+            excess_kwargs,
+        ) = self.fn.binder(*self.args, **self.current)
+        # except TimeoutError as e:
+        #     print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
+        # finally:
+        #     signal.alarm(0)
         compile_end = time.time()
         self._jit_was_triggered = True
 
@@ -291,7 +308,7 @@ class KernelEvalCall:
         wrapper_time = wrapper_end - compile_end
         
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            print(f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s")
+            print(f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s.")
 
         return self.compiled_kernel
 
