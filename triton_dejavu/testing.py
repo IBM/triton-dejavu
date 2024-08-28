@@ -32,10 +32,14 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
+import signal
 
 
 # __separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
 __separate_process_dump_file__ = "/storage/tmp/dejavu-mp-dump.log"
+__jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
+if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+    print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
 
 
 class SerializeableCompiledKernel(triton.compiler.CompiledKernel):
@@ -171,6 +175,10 @@ class CompiledKernelRun:
         return new_stream
 
 
+def handle_timeout(signum, frame):
+    raise TimeoutError()
+
+
 class KernelEvalCall:
     def __init__(
         self, fn, arg_names, benchmarking_stream, cur_config, call_lambda, *args, **current
@@ -186,11 +194,29 @@ class KernelEvalCall:
         self.call_lambda = call_lambda
         self.compiled_kernel = None
         self.cur_config = cur_config
+        self._jit_timeout_s = __jit_timeout_s__
+        self._jit_was_triggered = False
 
     def __call__(self):
         # TODO: config pre hook, post hook
         # return self.fn.run(*self.args, **self.current)
-        return self.call_lambda()
+        if not self._jit_was_triggered:
+            self._jit_was_triggered = True
+            def jit_with_timeout():
+                signal.signal(signal.SIGALRM, handle_timeout)
+                signal.alarm(self._jit_timeout_s)
+                try:
+                    ret = self.call_lambda()
+                except TimeoutError as e:
+                    print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
+                    ret = None
+                finally:
+                    signal.alarm(0)
+                return ret
+            
+            return jit_with_timeout()
+        else:
+            return self.call_lambda()
 
     def _call_pre_hook(self):
         # must be done before binding...so not separated...
@@ -216,15 +242,23 @@ class KernelEvalCall:
         
         self.current["warmup"] = True
         compile_start = time.time()
-        kernel = self.fn.run(*self.args, **self.current)
-        (
-            bound_args,
-            sig_and_spec,
-            constexpr_vals,
-            non_constexpr_vals,
-            excess_kwargs,
-        ) = self.fn.binder(*self.args, **self.current)
+        signal.signal(signal.SIGALRM, handle_timeout)
+        signal.alarm(self._jit_timeout_s)
+        try:
+            kernel = self.fn.run(*self.args, **self.current)
+            (
+                bound_args,
+                sig_and_spec,
+                constexpr_vals,
+                non_constexpr_vals,
+                excess_kwargs,
+            ) = self.fn.binder(*self.args, **self.current)
+        except TimeoutError as e:
+            print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
+        finally:
+            signal.alarm(0)
         compile_end = time.time()
+        self._jit_was_triggered = True
 
         # device = triton.runtime.driver.active.get_current_device()
         # stream = triton.runtime.driver.active.get_current_stream(device)
@@ -293,7 +327,7 @@ def _do_bench_cudagraph(
                 raise RuntimeError(
                     "Cannot capture graph in default stream. Please use side stream in benchmark code."
                 )
-            # warmup
+            # warmup & JIT if not separated process
             fn()
             # step 1 - we estimate the amount of time the kernel call takes
             # NOTE: this estimate isn't super accurate because the GPU isn't warmed up at this point
