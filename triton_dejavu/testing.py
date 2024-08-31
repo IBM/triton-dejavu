@@ -25,6 +25,8 @@ import numpy as np
 import torch
 
 # import torch.multiprocessing as mp
+# TODO: gate?
+# if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
 import multiprocessing as mp
 import io
 from collections import namedtuple
@@ -39,9 +41,9 @@ import traceback
 
 # __separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
 __separate_process_dump_file__ = "/storage/tmp/dejavu-mp-dump.log"
-__jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
-if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-    print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
+# __jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
+# if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+#     print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
 
 # # __so_lib_name__ = 'sigalarm.so'
 # __so_lib_name__ = f"sigalarm{sysconfig.get_config_var('EXT_SUFFIX')}"
@@ -202,7 +204,7 @@ class KernelEvalCall:
         self.call_lambda = call_lambda
         self.compiled_kernel = None
         self.cur_config = cur_config
-        self._jit_timeout_s = __jit_timeout_s__
+        # self._jit_timeout_s = __jit_timeout_s__
         self._jit_was_triggered = False
 
     def __call__(self):
