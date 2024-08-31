@@ -245,7 +245,7 @@ class Autotuner(KernelInterface):
                 print(f"[triton-dejavu] Triton cache isolation activated.")
             self._update_triton_cache_path()
             set_triton_cache_manager()
-
+        self._start_time = time.time()
 
     def _get_param_hash(self):
         # hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
@@ -561,9 +561,11 @@ class Autotuner(KernelInterface):
                 key_orig = key
                 key = tuple(key_s)
                 if key not in self.cache:
-                    if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                        print(f"[triton-dejavu] {key} not in cache, starting to tune...")
-                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0":
+                    # TODO: find better solution
+                    should_be_ready = (time.time() - self._start_time) > (5 * 60)
+                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
+                        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                            print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
                         used_cached_result = False
                         pruned_configs = self.prune_configs(kwargs)
