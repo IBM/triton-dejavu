@@ -26,7 +26,7 @@ import asyncio
 from distutils.util import strtobool
 
 from triton_dejavu import __version__ as dejavu_version
-from .dejavu_utilities import get_storage_identifier
+from .dejavu_utilities import get_storage_identifier, flag_print_debug, flag_print_debug_verbose
 
 
 __storage_env_var__ = "TRITON_DEJAVU_STORAGE"
@@ -244,7 +244,7 @@ class DejavuStorage:
             if config not in tmp_used_configs:
                 tmp_used_configs.append(config)
             changes_made = True
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(
                     f"[triton-dejavu] added {str(config)} for {folder_name} and key {key}"
                 )
@@ -263,7 +263,7 @@ class DejavuStorage:
         )
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(f"[triton-dejavu] No configurations found for {folder_name}.")
             # create cache file early
             cache_json = _get_cache_template(fn)
@@ -285,12 +285,12 @@ class DejavuStorage:
             ret[kt] = c
             if c not in tmp_used_configs:
                 tmp_used_configs.append(c)
-            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+            if flag_print_debug_verbose:
                 print(
                     f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
                 )
         self.used_configs[folder_name] = tmp_used_configs
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] restored {len(ret)} configurations for {folder_name}."
             )

@@ -28,6 +28,11 @@ __dejavu_version_minor_s__ = dejavu_version.split('.')[1]
 dejavu_version_minor = int(__dejavu_version_minor_s__)
 dejavu_version_major_minor = dejavu_version_major + dejavu_version_minor/math.pow(10, len(__dejavu_version_minor_s__))
 
+flag_print_autotuning = os.environ.get("TRITON_PRINT_AUTOTUNING", None) == "1"
+flag_print_debug = os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1"
+flag_print_debug_verbose = os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1"
+
+
 cuda_version = None
 
 
@@ -54,7 +59,7 @@ def _get_cuda_version():
         nvcc_cuda_version = output[release_idx].split(",")[0]
         cuda_version = nvcc_cuda_version
     except Exception as e:
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(f"[triton-dejavu] determining cuda version failed with: {e}")
         cuda_version = os.environ.get("CONTAINER_CUDA_VERSION", "unknown")
         if cuda_version == "unknown":

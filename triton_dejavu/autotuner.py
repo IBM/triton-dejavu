@@ -38,7 +38,7 @@ from triton_dejavu.dejavu_storage import (
     get_list_hash,
     get_string_hash,
 )
-from triton_dejavu.dejavu_utilities import get_triton_config_parameter_names, get_triton_config_defaults
+from triton_dejavu.dejavu_utilities import get_triton_config_parameter_names, get_triton_config_defaults, flag_print_debug, flag_print_autotuning, flag_print_debug_verbose
 
 if triton_major_version >= 3:
     from triton.compiler.errors import CompileTimeAssertionFailure, UnsupportedLanguageConstruct
@@ -187,11 +187,12 @@ class Autotuner(KernelInterface):
                 fn, self.configs_hash, self.key_hash, self._param_hash
             )
             # important, don't update configs_hash
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(
                     f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
                 )
         self.fallback_heuristic = fallback_heuristic
+        self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
 
     def _get_param_hash(self):
         hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
@@ -262,7 +263,7 @@ class Autotuner(KernelInterface):
         given_kwargs = list(kwargs.keys())
         required_config_args = self.config_kw_names + __additional_config_arg_check__
         if any(x in given_kwargs for x in required_config_args):
-            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+            if flag_print_debug_verbose:
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             ret = self.fn.run(
                 *args,
@@ -287,7 +288,7 @@ class Autotuner(KernelInterface):
                 key_orig = key
                 key = tuple(key_s)
                 if key not in self.cache:
-                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0":
+                    if self._use_fallback:
                         # prune configs
                         used_cached_result = False
                         pruned_configs = self.prune_configs(kwargs)
@@ -313,7 +314,7 @@ class Autotuner(KernelInterface):
                         self.pre_hook(args, reset_only=True)
                     else:
                         self.cache[key] = self.fallback_heuristic(key_orig)
-                        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                        if flag_print_autotuning:
                             print(
                                 f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
                             )
@@ -334,7 +335,7 @@ class Autotuner(KernelInterface):
                     self.warmup_t,
                     self.bench_time,
                 )
-                if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                if flag_print_autotuning:
                     print(
                         f"Triton autotuning for function {self.base_fn.__name__} finished after "
                         f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
@@ -594,7 +595,7 @@ class ConfigSpace:
                 **config_params,
             )
             config_list.append(nc)
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}."
             )
