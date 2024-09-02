@@ -47,16 +47,10 @@ from triton_dejavu.dejavu_utilities import (
 )
 
 if triton_major_version >= 3:
-    from triton.compiler.errors import (
-        CompileTimeAssertionFailure,
-        UnsupportedLanguageConstruct,
-    )
+    from triton.compiler.errors import CompileTimeAssertionFailure
 else:
     # to be backwards compatible
     class CompileTimeAssertionFailure(CompilationError):
-        pass
-
-    class UnsupportedLanguageConstruct(CompilationError):
         pass
 
 
@@ -259,7 +253,6 @@ class Autotuner(KernelInterface):
         except (
             OutOfResources,
             CompileTimeAssertionFailure,
-            UnsupportedLanguageConstruct,
         ):
             return (
                 float("inf")
