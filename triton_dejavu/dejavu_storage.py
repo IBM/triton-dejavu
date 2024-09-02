@@ -237,6 +237,7 @@ class DejavuStorage:
                 continue
             cache_json["cache"][str(key)] = str(config)
             cache_json["timings"][str(key)] = nt
+            cache_json["evaluated_configs"] = configs_len
             if config not in tmp_used_configs:
                 tmp_used_configs.append(config)
             changes_made = True
@@ -264,6 +265,7 @@ class DejavuStorage:
             # create cache file early
             cache_json = _get_cache_template(fn)
             self.fn_storage[folder_name] = cache_json
+            self.used_configs[folder_name] = []
             self.__store__()
             return {}
         if cache_file not in self._known_files:
