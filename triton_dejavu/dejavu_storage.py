@@ -123,8 +123,11 @@ def _wait_fn_hash(fn):
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
     # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
-    hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
-    return f"{fn_name}-{hash_of_hash}/{storage_tag}"
+    # hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
+    # folder_tree_name = f"{fn_name}-{hash_of_hash}/{storage_tag}"
+    hash_of_hash = get_string_hash(f"{fn_hash}-{key_hash}")
+    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/kernel_configs-{configs_hash}/code_version-{hash_of_hash}/{storage_tag}"
+    return folder_tree_name
 
 
 def get_config_list_hash(configs):

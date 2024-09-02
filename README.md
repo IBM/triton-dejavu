@@ -94,8 +94,9 @@ In addition, users can define a tag to be used by the dejavu storage to be able 
 Below is a simple example of how such a stored cache looks like (the “some_function” in the identifier is just there to help us humans analyzing what’s in the cache):
 
 ```
-DejavuStorage identifier: dejavu_0.5/cuda_12.1/torch_2.1.2+cu121/triton_3.0.0/gpu_NVIDIA_A100_80GB_PCIe 
-Cache identifier: some_function-ab4979d1539b394f48fe313d5462dc9254ae1623050232bd8d11077553c70c0c/default
+DejavuStorage identifier: dejavu_0.5/cuda_12.4/torch_2.4.0+cu121/triton_3.0.0/gpu_NVIDIA_A100_80GB_PCIe 
+Cache identifier: some_function/autotune_config-9cefb332ef1d4228aeabeeb71300a10e49af618945049a462862f7ebcba76770/kernel_configs-55a194aa00a30b006356930f070398dd06fd7e3442e00591250f93f7fdb3e9de/code_version-476f4fd1e55ef79ed14f270b5f9e7b6c5b4b0c0dbdc462ca3c98669dbb80a1b6/default
+
 Stored cache: 
 {
         "signature": "JITFunction(some_function)",
