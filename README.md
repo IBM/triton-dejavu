@@ -85,6 +85,7 @@ To determine if a previously stored cache is still applicable, we use the combin
 - hash of the autotuner key list
 - hash of the configurations provided to the autotuner
 - hash of some autotuner optional parameter
+- (minor version of triton-dejavu)
 
 So far, we think that the above listed combination determines the applicability of a cache unambiguous. Hence, if all these values match a stored cache, this cache is restored and reused.
 
@@ -93,7 +94,7 @@ In addition, users can define a tag to be used by the dejavu storage to be able 
 Below is a simple example of how such a stored cache looks like (the “some_function” in the identifier is just there to help us humans analyzing what’s in the cache):
 
 ```
-DejavuStorage identifier: dejavu_0.1/cuda_12.1/torch_2.1.2+cu121/triton_3.0.0/gpu_NVIDIA_A100_80GB_PCIe 
+DejavuStorage identifier: dejavu_0.5/cuda_12.1/torch_2.1.2+cu121/triton_3.0.0/gpu_NVIDIA_A100_80GB_PCIe 
 Cache identifier: some_function-ab4979d1539b394f48fe313d5462dc9254ae1623050232bd8d11077553c70c0c/default
 Stored cache: 
 {

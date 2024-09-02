@@ -18,8 +18,15 @@
 import torch
 import triton
 import os
+import math
 
 from triton_dejavu import __version__ as dejavu_version
+
+_dejavu_version_major_minor_s_ = '.'.join(dejavu_version.split('.')[:2])
+dejavu_version_major = int(dejavu_version.split('.')[0])
+_dejavu_version_minor_s_ = dejavu_version.split('.')[1]
+dejavu_version_minor = int(_dejavu_version_minor_s_)
+dejavu_version_major_minor = dejavu_version_major + dejavu_version_minor/math.pow(10, len(_dejavu_version_minor_s_))
 
 cuda_version = None
 
@@ -63,5 +70,10 @@ def get_storage_identifier():
     gpu_name = torch.cuda.get_device_name().replace(" ", "_")
     triton_version = triton.__version__
     torch_version = torch.__version__
-    storage_identifier = f"dejavu_{dejavu_version}/cuda_{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    dejavu_identifier = f"dejavu_{dejavu_version}"
+    if dejavu_version_major_minor >= 0.5:
+        # don't let patches void collected data
+        # cache file must be compatible between minor versions
+        dejavu_identifier = f"dejavu_{dejavu_version_major_minor}"
+    storage_identifier = f"{dejavu_identifier}/cuda_{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
     return storage_identifier
