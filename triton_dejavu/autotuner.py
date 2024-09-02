@@ -38,10 +38,19 @@ from triton_dejavu.dejavu_storage import (
     get_list_hash,
     get_string_hash,
 )
-from triton_dejavu.dejavu_utilities import get_triton_config_parameter_names, get_triton_config_defaults, flag_print_debug, flag_print_autotuning, flag_print_debug_verbose
+from triton_dejavu.dejavu_utilities import (
+    get_triton_config_parameter_names,
+    get_triton_config_defaults,
+    flag_print_debug,
+    flag_print_autotuning,
+    flag_print_debug_verbose,
+)
 
 if triton_major_version >= 3:
-    from triton.compiler.errors import CompileTimeAssertionFailure, UnsupportedLanguageConstruct
+    from triton.compiler.errors import (
+        CompileTimeAssertionFailure,
+        UnsupportedLanguageConstruct,
+    )
 else:
     # to be backwards compatible
     class CompileTimeAssertionFailure(CompilationError):
@@ -64,7 +73,9 @@ def _all_kwargs(self):
     return {
         **self.kwargs,
         **{
-           p: getattr(self, p) for p in __triton_config_parameter_names__ if getattr(self, p) is not None
+            p: getattr(self, p)
+            for p in __triton_config_parameter_names__
+            if getattr(self, p) is not None
         },
     }
 
@@ -245,7 +256,11 @@ class Autotuner(KernelInterface):
                 quantiles=(0.5, 0.2, 0.8),
                 fast_flush=False,
             )
-        except (OutOfResources, CompileTimeAssertionFailure, UnsupportedLanguageConstruct):
+        except (
+            OutOfResources,
+            CompileTimeAssertionFailure,
+            UnsupportedLanguageConstruct,
+        ):
             return (
                 float("inf")
                 if self.use_cuda_graph
@@ -494,7 +509,7 @@ class ConfigSpace:
     At the initalization of the autotuner, a list of all possible and valid configurations is generated
     and passed to the autotuner.
 
-    Please note that some of the configuration parameters depend on the used triton config. 
+    Please note that some of the configuration parameters depend on the used triton config.
     ConfigSpace will dynamically use the one of the installed triton platform.
 
     example:
@@ -517,7 +532,7 @@ class ConfigSpace:
                             with the generated kwarg dictionary. Only configuration combinations where all functions
                             evaluate to True are passed to the autotuner.
     :ivar configuration_args: keyword arguments (so name=value, ...) for triton.Config parameters. For example, this are usually num_warps,
-                              num_stages, num_ctas. Depending on version or platform, such as enable_warp_specialization 
+                              num_stages, num_ctas. Depending on version or platform, such as enable_warp_specialization
                               or maxnreg will be used as well.
     """
 
@@ -535,20 +550,23 @@ class ConfigSpace:
         self.kwarg_conditions = kwarg_conditions
 
         # adapt to current triton platform
-        for k,v in __triton_config_default_values__.items():
+        for k, v in __triton_config_default_values__.items():
             # but as lists!
             setattr(self, k, [v])
 
-        for k,v in dict(configuration_args).items():
+        for k, v in dict(configuration_args).items():
             if k not in __triton_config_parameter_names__:
-                print(f"[triton-dejav] WARNING: Configuration parameter {k} not supported on this platform and will be ignored.")
+                print(
+                    f"[triton-dejav] WARNING: Configuration parameter {k} not supported on this platform and will be ignored."
+                )
                 continue
             setattr(self, k, v)
- 
+
         # check for special parameters
-        if hasattr(self, 'num_ctas'):
+        if hasattr(self, "num_ctas"):
             # check if other ctas are allowed
             import torch
+
             capability = torch.cuda.get_device_capability()
             if capability[0] < 9:
                 self.num_ctas = [1]
@@ -581,7 +599,9 @@ class ConfigSpace:
             if append:
                 kwarg_lists.append(kwarg)
         # then cross product with all others
-        list_of_list_of_config_params = [getattr(self, p) for p in __triton_config_parameter_names__]
+        list_of_list_of_config_params = [
+            getattr(self, p) for p in __triton_config_parameter_names__
+        ]
         config_product = list(itertools.product(*list_of_list_of_config_params))
         all_product = list(itertools.product(kwarg_lists, config_product))
         config_list = []

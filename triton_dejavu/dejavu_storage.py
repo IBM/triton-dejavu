@@ -26,7 +26,11 @@ import asyncio
 from distutils.util import strtobool
 
 from triton_dejavu import __version__ as dejavu_version
-from .dejavu_utilities import get_storage_identifier, flag_print_debug, flag_print_debug_verbose
+from .dejavu_utilities import (
+    get_storage_identifier,
+    flag_print_debug,
+    flag_print_debug_verbose,
+)
 
 
 __storage_env_var__ = "TRITON_DEJAVU_STORAGE"
