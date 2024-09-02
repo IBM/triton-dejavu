@@ -60,6 +60,7 @@ chmod o+rw dejavu-data/
 docker run --rm -it --gpus '"device=0"' -v $(pwd)/dejavu-data/:/storage/dejavu-data/ test-triton-dejavu:latest
 ```
 
+You can add e.g. `--build-arg triton_version=release/2.3.x` to the docker build command if you want to test not the latest `main` of triton.
 
 Features
 ----------------
