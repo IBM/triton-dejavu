@@ -27,8 +27,8 @@ import itertools
 import torch
 
 # TODO: still necessary?
-import gc
-import traceback
+# import gc
+# import traceback
 
 # from triton.testing import do_bench, do_bench_cudagraph
 from triton.testing import do_bench as upstream_do_bench
@@ -562,8 +562,9 @@ class Autotuner(KernelInterface):
                 key = tuple(key_s)
                 if key not in self.cache:
                     # TODO: find better solution
-                    should_be_ready = (time.time() - self._start_time) > (5 * 60)
-                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
+                    # should_be_ready = (time.time() - self._start_time) > (5 * 60)
+                    # if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
+                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0":
                         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                             print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
