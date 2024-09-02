@@ -15,8 +15,8 @@
 #  *******************************************************************************/
 #
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 
-from .autotuner import autotune, ConfigSpace
 from .dejavu_storage import global_dejavu_storage
+from .autotuner import autotune, ConfigSpace

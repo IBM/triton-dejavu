@@ -26,7 +26,7 @@ import asyncio
 from distutils.util import strtobool
 
 from triton_dejavu import __version__ as dejavu_version
-from .dejavu_utilities import get_storage_identifier
+from .dejavu_utilities import get_storage_identifier, flag_print_debug, flag_print_debug_verbose
 
 
 __storage_env_var__ = "TRITON_DEJAVU_STORAGE"
@@ -123,8 +123,11 @@ def _wait_fn_hash(fn):
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
     # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
-    hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
-    return f"{fn_name}-{hash_of_hash}/{storage_tag}"
+    # hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
+    # folder_tree_name = f"{fn_name}-{hash_of_hash}/{storage_tag}"
+    hash_of_hash = get_string_hash(f"{fn_hash}-{key_hash}")
+    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/kernel_configs-{configs_hash}/code_version-{hash_of_hash}/{storage_tag}"
+    return folder_tree_name
 
 
 def get_config_list_hash(configs):
@@ -189,18 +192,6 @@ class DejavuStorage:
                 os.chmod(dir_name, 0o0777)
             except PermissionError as e:
                 print(f"can't set permission of directory {dir_name}: {e}")
-        for folder_name in self.used_configs:
-            dir_name = f"{self.storage_path}/{folder_name}/"
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, 0o0777)
-            file_name = f"{dir_name}/used_configs.json"
-            str_l = [str(c) for c in self.used_configs[folder_name]]
-            with open(file_name, "w") as f:
-                json.dump(str_l, f, indent=4)
-            try:
-                os.chmod(dir_name, 0o0777)
-            except PermissionError as e:
-                print(f"can't set permission of directory {dir_name}: {e}")
 
     def add_autotuner_cache(
         self,
@@ -249,10 +240,11 @@ class DejavuStorage:
                 continue
             cache_json["cache"][str(key)] = str(config)
             cache_json["timings"][str(key)] = nt
+            cache_json["evaluated_configs"] = configs_len
             if config not in tmp_used_configs:
                 tmp_used_configs.append(config)
             changes_made = True
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(
                     f"[triton-dejavu] added {str(config)} for {folder_name} and key {key}"
                 )
@@ -271,11 +263,12 @@ class DejavuStorage:
         )
         cache_file = f"{self.storage_path}/{folder_name}/cache.json"
         if not os.path.isfile(cache_file):
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(f"[triton-dejavu] No configurations found for {folder_name}.")
             # create cache file early
             cache_json = _get_cache_template(fn)
             self.fn_storage[folder_name] = cache_json
+            self.used_configs[folder_name] = []
             self.__store__()
             return {}
         if cache_file not in self._known_files:
@@ -294,12 +287,12 @@ class DejavuStorage:
             ret[kt] = c
             if c not in tmp_used_configs:
                 tmp_used_configs.append(c)
-            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+            if flag_print_debug_verbose:
                 print(
                     f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
                 )
         self.used_configs[folder_name] = tmp_used_configs
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] restored {len(ret)} configurations for {folder_name}."
             )

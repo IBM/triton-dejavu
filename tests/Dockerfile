@@ -26,9 +26,13 @@ RUN pip install -r requirements.txt
 
 # broken?
 # RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+
+ARG triton_version=main
+# main = nightly, basically
 RUN git clone https://github.com/triton-lang/triton.git
 # RUN cd triton; git checkout release/2.3.x
 # RUN cd triton; git checkout release/3.0.x
+RUN cd triton; git checkout ${triton_version}
 RUN pip install ./triton/python
 
 #### triton dejavu #### 

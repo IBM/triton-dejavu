@@ -34,7 +34,7 @@ import torch
 from triton.testing import do_bench as upstream_do_bench
 from triton.testing import do_bench_cudagraph as upstream_do_bench_cudagraph
 from triton_dejavu.testing import do_bench, do_bench_cudagraph, KernelEvalCall
-from triton import KernelInterface, Config, OutOfResources
+from triton import KernelInterface, Config, OutOfResources, CompilationError
 
 from triton import __version__ as triton_version
 
@@ -46,28 +46,34 @@ from triton_dejavu.dejavu_storage import (
     get_list_hash,
     get_string_hash,
 )
+from triton_dejavu.dejavu_utilities import get_triton_config_parameter_names, get_triton_config_defaults, flag_print_debug, flag_print_autotuning, flag_print_debug_verbose
 from triton_dejavu.cache_manager import set_triton_cache_manager
 
+if triton_major_version >= 3:
+    from triton.compiler.errors import CompileTimeAssertionFailure, UnsupportedLanguageConstruct
+else:
+    # to be backwards compatible
+    class CompileTimeAssertionFailure(CompilationError):
+        pass
 
-# TODO: make dynamic
-__additional_config_arg_check__ = ["num_warps", "num_stages", "num_ctas"]
+    class UnsupportedLanguageConstruct(CompilationError):
+        pass
 
 
-# to be compatible with different triton 3.x versions
+__additional_config_arg_check__ = ["num_warps", "num_stages"]
+__triton_config_parameter_names__ = get_triton_config_parameter_names()
+__triton_config_default_values__ = get_triton_config_defaults()
+
+
 def _all_kwargs(self):
-    if not hasattr(self, "maxnreg"):
-        self.maxnreg = None
+    """to be compatible with different triton versions"""
+    for p in __triton_config_parameter_names__:
+        if not hasattr(self, p):
+            setattr(self, p, __triton_config_default_values__[p])
     return {
         **self.kwargs,
         **{
-            k: v
-            for (k, v) in (
-                ("num_warps", self.num_warps),
-                ("num_ctas", self.num_ctas),
-                ("num_stages", self.num_stages),
-                ("maxnreg", self.maxnreg),
-            )
-            if v is not None
+           p: getattr(self, p) for p in __triton_config_parameter_names__ if getattr(self, p) is not None
         },
     }
 
@@ -233,11 +239,12 @@ class Autotuner(KernelInterface):
                 fn, self.configs_hash, self.key_hash, self._param_hash
             )
             # important, don't update configs_hash
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(
                     f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
                 )
         self.fallback_heuristic = fallback_heuristic
+        self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
 
         # triton cache
         if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
@@ -268,8 +275,6 @@ class Autotuner(KernelInterface):
         os.environ['TRITON_DEJAVU_INSTANCE_RUN_ID'] = run_id_str
 
     def _bench(self, *args, config, **meta):
-        if triton_major_version >= 3:
-            from triton.compiler.errors import CompileTimeAssertionFailure
 
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
@@ -280,12 +285,9 @@ class Autotuner(KernelInterface):
                 " Make sure that you don't re-define auto-tuned symbols."
             )
         # augment meta-parameters with tunable ones
-        if triton_major_version >= 3:
-            if not hasattr(config, "all_kwargs"):
-                config.all_kwargs = lambda: _all_kwargs(config)
-            current = dict(meta, **config.all_kwargs())
-        else:
-            current = dict(meta, **config.kwargs)
+        if not hasattr(config, "all_kwargs"):
+            config.all_kwargs = lambda: _all_kwargs(config)
+        current = dict(meta, **config.all_kwargs())
         full_nargs = {**self.nargs, **current}
 
         def kernel_call():
@@ -293,97 +295,69 @@ class Autotuner(KernelInterface):
                 config.pre_hook(full_nargs)
             self.pre_hook(args)
             # print('finished pre_hook')
-            if triton_major_version >= 3:
-                self.fn.run(
-                    *args,
-                    # num_warps=config.num_warps,
-                    # num_stages=config.num_stages,
-                    # num_ctas=config.num_ctas,
-                    **current,
-                )
-            else:
-                self.fn.run(
-                    *args,
-                    num_warps=config.num_warps,
-                    num_stages=config.num_stages,
-                    num_ctas=config.num_ctas,
-                    enable_warp_specialization=config.enable_warp_specialization,
-                    # enable_persistent=False,
-                    **current,
-                )
+            self.fn.run(
+                *args,
+                **current,
+            )
             self.post_hook(args)
 
-        if triton_major_version >= 3:
-            try:
-                if self.use_cuda_graph:
-                    # with torch.cuda.stream(self.benchmarking_stream):
-                    #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
-                    kernel_call_obj = KernelEvalCall(
-                        self.fn,
-                        self.arg_names,
-                        self.benchmarking_stream,
-                        config,
-                        kernel_call,
-                        *args,
-                        **current,
-                    )
-                    use_isolated_process = False
-                    if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
-                        use_isolated_process = True
-                        # NOTE: if a config.pre_hook exists, it will be executed in the parent process
-                        #  but with already cloned arges (not possible to pickle an unbound kernel)
-                    bench_res = do_bench_cudagraph(
-                        kernel_call_obj,
-                        rep=self.rep_t,
-                        return_mode="median",
-                        use_isolated_process=use_isolated_process,
-                        run_id=self.run_id,
-                        path_prefix=str(self._obj_hash),
-                    )
-                    return bench_res
-                return upstream_do_bench(
+        try:
+            if self.use_cuda_graph:
+                # with torch.cuda.stream(self.benchmarking_stream):
+                #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
+                kernel_call_obj = KernelEvalCall(
+                    self.fn,
+                    self.arg_names,
+                    self.benchmarking_stream,
+                    config,
                     kernel_call,
-                    warmup=self.warmup_t,
+                    *args,
+                    **current,
+                )
+                use_isolated_process = False
+                if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
+                    use_isolated_process = True
+                    # NOTE: if a config.pre_hook exists, it will be executed in the parent process
+                    #  but with already cloned arges (not possible to pickle an unbound kernel)
+                bench_res = do_bench_cudagraph(
+                    kernel_call_obj,
                     rep=self.rep_t,
-                    quantiles=(0.5, 0.2, 0.8),
-                    fast_flush=False,
+                    return_mode="median",
+                    use_isolated_process=use_isolated_process,
+                    run_id=self.run_id,
+                    path_prefix=str(self._obj_hash),
                 )
-            except (OutOfResources, CompileTimeAssertionFailure, RuntimeError) as e:
-                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                    print(
-                        f"[triton-dejavu] testing config '{config}' failed with: '{e}'"
-                    )
-                # trying to avoid/reset CUDA error: an illegal memory access was encountered
-                # gc.collect()
-                # torch.cuda.empty_cache()
-                # torch.cuda.ipc_collect()
-                # traceback.clear_frames(sys.exc_info()[2])
-                return (
-                    float("inf")
-                    if self.use_cuda_graph
-                    else [float("inf"), float("inf"), float("inf")]
+                return bench_res
+            return upstream_do_bench(
+                kernel_call,
+                warmup=self.warmup_t,
+                rep=self.rep_t,
+                quantiles=(0.5, 0.2, 0.8),
+                fast_flush=False,
+            )
+        except (OutOfResources, CompileTimeAssertionFailure, RuntimeError) as e:
+            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                print(
+                    f"[triton-dejavu] testing config '{config}' failed with: '{e}'"
                 )
-            except AssertionError as e:
-                print(f"ERROR: {e}")
-                return (
-                    float("inf")
-                    if self.use_cuda_graph
-                    else [float("inf"), float("inf"), float("inf")]
-                )
-        else:
-            try:
-                return upstream_do_bench(
-                    kernel_call,
-                    warmup=self.warmup_t,
-                    rep=self.rep_t,
-                    quantiles=(0.5, 0.2, 0.8),
-                    fast_flush=False,
-                )
-            except OutOfResources:
-                return [float("inf"), float("inf"), float("inf")]
-            except AssertionError as e:
-                print(f"ERROR: {e}")
-                return [float("inf"), float("inf"), float("inf")]
+            # trying to avoid/reset CUDA error: an illegal memory access was encountered
+            # gc.collect()
+            # torch.cuda.empty_cache()
+            # torch.cuda.ipc_collect()
+            # traceback.clear_frames(sys.exc_info()[2])
+            return (
+                float("inf")
+                if self.use_cuda_graph
+                else [float("inf"), float("inf"), float("inf")]
+            )
+        except AssertionError as e:
+            print(f"ERROR: {e}")
+            return (
+                float("inf")
+                if self.use_cuda_graph
+                else [float("inf"), float("inf"), float("inf")]
+            )
+
 
     def _run_benchmarks(self, *args, configs, **kwargs):
         if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
@@ -529,7 +503,7 @@ class Autotuner(KernelInterface):
         given_kwargs = list(kwargs.keys())
         required_config_args = self.config_kw_names + __additional_config_arg_check__
         if any(x in given_kwargs for x in required_config_args):
-            if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+            if flag_print_debug_verbose:
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             # TODO: call pre_hook or kwargs['pre_hook']?
             if 'pre_hook' in kwargs and kwargs['pre_hook'] is not None:
@@ -564,7 +538,7 @@ class Autotuner(KernelInterface):
                     # TODO: find better solution
                     # should_be_ready = (time.time() - self._start_time) > (5 * 60)
                     # if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
-                    if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0":
+                    if self._use_fallback:
                         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
                             print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
@@ -591,7 +565,7 @@ class Autotuner(KernelInterface):
                         self.pre_hook(args, reset_only=True)
                     else:
                         self.cache[key] = self.fallback_heuristic(key_orig)
-                        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                        if flag_print_autotuning:
                             print(
                                 f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
                             )
@@ -612,7 +586,7 @@ class Autotuner(KernelInterface):
                     self.warmup_t,
                     self.bench_time,
                 )
-                if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1":
+                if flag_print_autotuning:
                     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
                         f"Triton autotuning for function {self.base_fn.__name__} finished after "
                         f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
@@ -621,25 +595,13 @@ class Autotuner(KernelInterface):
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
-                # print('config pre hook executed')
-            if triton_major_version >= 3:
-                if not hasattr(config, "all_kwargs"):
-                    config.all_kwargs = lambda: _all_kwargs(config)
-                ret = self.fn.run(
-                    *args,
-                    **kwargs,
-                    **config.all_kwargs(),
-                )
-            else:
-                ret = self.fn.run(
-                    *args,
-                    num_warps=config.num_warps,
-                    num_stages=config.num_stages,
-                    num_ctas=config.num_ctas,
-                    enable_warp_specialization=config.enable_warp_specialization,
-                    **kwargs,
-                    **config.kwargs,
-                )
+            if not hasattr(config, "all_kwargs"):
+                config.all_kwargs = lambda: _all_kwargs(config)
+            ret = self.fn.run(
+                *args,
+                **kwargs,
+                **config.all_kwargs(),
+            )
             self.nargs = None
         return ret
 
@@ -652,30 +614,17 @@ class Autotuner(KernelInterface):
             if isinstance(top_k, float) and top_k <= 1.0:
                 top_k = int(len(self.configs) * top_k)
             if len(pruned_configs) > top_k:
-                if triton_major_version >= 3:
-                    for config in pruned_configs:
-                        if not hasattr(config, "all_kwargs"):
-                            config.all_kwargs = lambda: _all_kwargs(config)
-                    est_timing = {
-                        config: self.perf_model(
-                            **self.nargs,
-                            **kwargs,
-                            **config.all_kwargs(),
-                        )
-                        for config in pruned_configs
-                    }
-                else:
-                    est_timing = {
-                        config: self.perf_model(
-                            **self.nargs,
-                            **kwargs,
-                            **config.kwargs,
-                            num_stages=config.num_stages,
-                            num_warps=config.num_warps,
-                            num_ctas=config.num_ctas,
-                        )
-                        for config in pruned_configs
-                    }
+                for config in pruned_configs:
+                    if not hasattr(config, "all_kwargs"):
+                        config.all_kwargs = lambda: _all_kwargs(config)
+                est_timing = {
+                    config: self.perf_model(
+                        **self.nargs,
+                        **kwargs,
+                        **config.all_kwargs(),
+                    )
+                    for config in pruned_configs
+                }
                 pruned_configs = sorted(est_timing.keys(), key=lambda x: est_timing[x])[
                     :top_k
                 ]
@@ -685,29 +634,15 @@ class Autotuner(KernelInterface):
         self.nargs = dict(zip(self.arg_names, args))
         ret = []
         for config in self.prune_configs(kwargs):
-            if triton_major_version >= 3:
-                if not hasattr(config, "all_kwargs"):
-                    config.all_kwargs = lambda: _all_kwargs(config)
-                ret.append(
-                    self.fn.warmup(
-                        *args,
-                        **kwargs,
-                        **config.all_kwargs(),
-                    )
+            if not hasattr(config, "all_kwargs"):
+                config.all_kwargs = lambda: _all_kwargs(config)
+            ret.append(
+                self.fn.warmup(
+                    *args,
+                    **kwargs,
+                    **config.all_kwargs(),
                 )
-            else:
-                ret.append(
-                    self.fn.warmup(
-                        *args,
-                        num_warps=config.num_warps,
-                        num_ctas=config.num_ctas,
-                        num_stages=config.num_stages,
-                        enable_warp_specialization=config.enable_warp_specialization,
-                        enable_persistent=config.enable_persistent,
-                        **kwargs,
-                        **config.kwargs,
-                    )
-                )
+            )
         self.nargs = None
         return ret
 
@@ -825,6 +760,9 @@ class ConfigSpace:
     At the initalization of the autotuner, a list of all possible and valid configurations is generated
     and passed to the autotuner.
 
+    Please note that some of the configuration parameters depend on the used triton config. 
+    ConfigSpace will dynamically use the one of the installed triton platform.
+
     example:
     .. highlight:: python
     .. code-block:: python
@@ -839,76 +777,56 @@ class ConfigSpace:
 
     :ivar kwargs_with_lists: a dictionary of lists of meta-parameters to pass to the kernel as keyword arguments.
     :type kwargs: dict[Str, List[Any]]
-    :ivar num_warps: the number of warps to use for the kernel when compiled for GPUs. For example, if
-                      `num_warps=8`, then each kernel instance will be automatically parallelized to
-                      cooperatively execute using `8 * 32 = 256` threads.
-    :type num_warps: int
-    :ivar num_stages: the number of stages that the compiler should use when software-pipelining loops.
-                       Mostly useful for matrix multiplication workloads on SM80+ GPUs.
-    :type num_stages: int
-    :ivar num_ctas: number of blocks in a block cluster. SM90+ only.
-    :type num_ctas: int
-    :ivar maxnreg: maximum number of registers one thread can use.  Corresponds
-                       to ptx .maxnreg directive.  Not supported on all platforms.
-    :type maxnreg: Optional[int]
-    :ivar enable_warp_specialization: enable specialization (spatial partitioning) or not.
-                                      See https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#spatial-partitioning-also-known-as-warp-specialization (only triton < 3.0)
-    :type enable_warp_specialization: bool
     :ivar pre_hook: a function that will be called before the kernel is called. Parameters of this
                     function are args.
     :ivar kwarg_conditions: a list of functions to be evaluated during configuration creation. The functions are called
                             with the generated kwarg dictionary. Only configuration combinations where all functions
                             evaluate to True are passed to the autotuner.
+    :ivar configuration_args: keyword arguments (so name=value, ...) for triton.Config parameters. For example, this are usually num_warps,
+                              num_stages, num_ctas. Depending on version or platform, such as enable_warp_specialization 
+                              or maxnreg will be used as well.
     """
 
     def __init__(
         self,
         kwargs_with_lists,
-        num_warps=None,
-        num_stages=None,
-        num_ctas=None,
-        enable_warp_specialization=None,
-        pre_hook=None,
         kwarg_conditions=None,
+        pre_hook=None,
+        **configuration_args,
     ):
-        if num_warps is None:
-            num_warps = [4]
-        if num_stages is None:
-            num_stages = [2]
-        if num_ctas is None:
-            num_ctas = [1]
-        else:
-            # check if other ctas are allowed
-            import torch
-
-            capability = torch.cuda.get_device_capability()
-            if capability[0] < 9:
-                num_ctas = [1]
-        if enable_warp_specialization is None or triton_major_version >= 3:
-            enable_warp_specialization = [False]
         if kwarg_conditions is None:
             kwarg_conditions = []
         self.kwargs = kwargs_with_lists
-        self.kwarg_keys = list(kwargs_with_lists.keys())
-        self.num_warps = num_warps
-        self.num_ctas = num_ctas
-        self.num_stages = num_stages
-        self.enable_warp_specialization = enable_warp_specialization
-        # self.enable_persistent = False
+	self.kwarg_keys = list(kwargs_with_lists.keys())
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
         self._num_of_invalid_configs = 0
+
+        # adapt to current triton platform
+        for k,v in __triton_config_default_values__.items():
+            # but as lists!
+            setattr(self, k, [v])
+
+        for k,v in dict(configuration_args).items():
+            if k not in __triton_config_parameter_names__:
+                print(f"[triton-dejav] WARNING: Configuration parameter {k} not supported on this platform and will be ignored.")
+                continue
+            setattr(self, k, v)
+ 
+        # check for special parameters
+        if hasattr(self, 'num_ctas'):
+            # check if other ctas are allowed
+            import torch
+            capability = torch.cuda.get_device_capability()
+            if capability[0] < 9:
+                self.num_ctas = [1]
 
     def __str__(self):
         res = []
         for k, v in self.kwargs.items():
             res.append(f"{k}: {v}")
-        res.append(f"num_warps: {self.num_warps}")
-        res.append(f"num_ctas: {self.num_ctas}")
-        res.append(f"num_stages: {self.num_stages}")
-        if triton_major_version < 3:
-            res.append(f"enable_warp_specialization: {self.enable_warp_specialization}")
-        # res.append(f"enable_persistent: {self.enable_persistent}")
+        for p in __triton_config_parameter_names__:
+            res.append(f"{p}: {getattr(self, p)}")
         return "ConfigSpace: " + ", ".join(res)
 
     def generate_config_list(self):
@@ -932,41 +850,21 @@ class ConfigSpace:
             if append:
                 kwarg_lists.append(kwarg)
         # then cross product with all others
-        if triton_major_version >= 3:
-            config_product = list(
-                itertools.product(self.num_warps, self.num_ctas, self.num_stages)
-            )
-        else:
-            config_product = list(
-                itertools.product(
-                    self.num_warps,
-                    self.num_ctas,
-                    self.num_stages,
-                    self.enable_warp_specialization,
-                )
-            )
+        list_of_list_of_config_params = [getattr(self, p) for p in __triton_config_parameter_names__]
+        config_product = list(itertools.product(*list_of_list_of_config_params))
         all_product = list(itertools.product(kwarg_lists, config_product))
         config_list = []
         for cc in all_product:
-            if triton_major_version >= 3:
-                nc = Config(
-                    cc[0],
-                    num_warps=cc[1][0],
-                    num_ctas=cc[1][1],
-                    num_stages=cc[1][2],
-                    pre_hook=self.pre_hook,
-                )
-            else:
-                nc = Config(
-                    cc[0],
-                    num_warps=cc[1][0],
-                    num_ctas=cc[1][1],
-                    num_stages=cc[1][2],
-                    enable_warp_specialization=cc[1][3],
-                    pre_hook=self.pre_hook,
-                )
+            config_params = {}
+            for i, p in enumerate(__triton_config_parameter_names__):
+                config_params[p] = cc[1][i]
+            nc = Config(
+                cc[0],
+                pre_hook=self.pre_hook,
+                **config_params,
+            )
             config_list.append(nc)
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}."
             )
@@ -994,7 +892,7 @@ class ConfigSpace:
         for i, condition in enumerate(self.kwarg_conditions):
             # global AND
             if not condition(kwarg):
-                if os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1":
+                if flag_print_debug_verbose:
                     print(f"config {kwarg} is not allowed (violated condition {i})!")
                 return False
         return True
