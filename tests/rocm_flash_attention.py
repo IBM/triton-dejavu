@@ -330,10 +330,17 @@ gpu_name = torch.cuda.get_device_name()
             "PRE_LOAD_V": [True, False],
         },
         kwarg_conditions=[
-            lambda kwarg: kwarg["BLOCK_M"] >= kwarg["BLOCK_N"],
-            lambda kwarg: kwarg["BLOCK_M"] != 64 or 'H100' not in gpu_name,  # BLOCK_M not 64! still causes segfault on H100 (also with latest triton)
-            lambda kwarg: kwarg["BLOCK_N"] != 128 or kwarg["PRE_LOAD_V"] == False,  # if BLOCK_N = 128 and pre_load there are numerical errors on H100
-            lambda kwarg: kwarg["PRE_LOAD_V"] == True or 'H100' in gpu_name,  # to ensure pre load for all other GPUs
+            lambda kwarg: (kwarg["BLOCK_M"] >= kwarg["BLOCK_N"]),
+            lambda kwarg: (kwarg["BLOCK_M"] != 64)
+            or (
+                "H100" not in gpu_name
+            ),  # BLOCK_M not 64! still causes segfault on H100 (also with latest triton)
+            lambda kwarg: (kwarg["BLOCK_N"] != 128)
+            or (
+                kwarg["PRE_LOAD_V"] == False
+            ),  # if BLOCK_N = 128 and pre_load there are numerical errors on H100
+            lambda kwarg: (kwarg["PRE_LOAD_V"] == True)
+            or ("H100" in gpu_name),  # to ensure pre load for all other GPUs
         ],
         num_warps=[2, 4, 8],
         num_stages=[2, 4, 6, 8],
