@@ -549,7 +549,7 @@ class Autotuner(KernelInterface):
                     # TODO: find better solution
                     # should_be_ready = (time.time() - self._start_time) > (5 * 60)
                     # if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
-                    if self._use_fallback:
+                    if not self._use_fallback:
                         if flag_print_debug:
                             print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
