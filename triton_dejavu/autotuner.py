@@ -453,7 +453,7 @@ class Autotuner(KernelInterface):
                 exploration_EI = EI(xi=0.04)
                 smac_facade = HyperparameterOptimizationFacade(
                     smac_scenario, eval_config, overwrite=overwrite, dask_client=None,
-                    acquisition_function=exploration_EI
+                    # acquisition_function=exploration_EI
                 )
                 # need to force reset...
                 # smac._optimizer._finished = False
