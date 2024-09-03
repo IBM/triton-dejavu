@@ -296,7 +296,9 @@ class Autotuner(KernelInterface):
                 key_orig = key
                 key = tuple(key_s)
                 if key not in self.cache:
-                    if self._use_fallback:
+                    if not self._use_fallback:
+                        if flag_print_debug:
+                            print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
                         used_cached_result = False
                         pruned_configs = self.prune_configs(kwargs)
