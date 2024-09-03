@@ -48,10 +48,12 @@ from triton_dejavu.dejavu_storage import (
 )
 from triton_dejavu.dejavu_utilities import (
     get_triton_config_parameter_names,
-    get_triton_config_defaults,
+    get_triton_config_defaults_values,
+    get_triton_config_defaults_types,
     flag_print_debug,
     flag_print_autotuning,
     flag_print_debug_verbose,
+    get_type_dict,
 )
 from triton_dejavu.cache_manager import set_triton_cache_manager
 
@@ -65,7 +67,8 @@ else:
 
 __additional_config_arg_check__ = ["num_warps", "num_stages"]
 __triton_config_parameter_names__ = get_triton_config_parameter_names()
-__triton_config_default_values__ = get_triton_config_defaults()
+__triton_config_default_values__ = get_triton_config_defaults_values()
+__triton_config_default_types__ = get_triton_config_defaults_types()
 
 
 def _all_kwargs(self):
@@ -227,7 +230,7 @@ class Autotuner(KernelInterface):
             self.bohb_max_search_time_s = bo_max_search_t
             # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 2147483647))
             # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+            if flag_print_debug:
                 print(
                     f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} and max walltime to {self.bohb_max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
                 )
@@ -250,10 +253,12 @@ class Autotuner(KernelInterface):
                 )
         self.fallback_heuristic = fallback_heuristic
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
+        self._use_isolated_process = os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
 
         # triton cache
-        if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
-            if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        self._use_split_cache = os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1"
+        if self._use_split_cache:
+            if flag_print_debug:
                 print(f"[triton-dejavu] Triton cache isolation activated.")
             self._update_triton_cache_path()
             set_triton_cache_manager()
@@ -319,16 +324,13 @@ class Autotuner(KernelInterface):
                     *args,
                     **current,
                 )
-                use_isolated_process = False
-                if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
-                    use_isolated_process = True
-                    # NOTE: if a config.pre_hook exists, it will be executed in the parent process
-                    #  but with already cloned arges (not possible to pickle an unbound kernel)
+                # NOTE: if a config.pre_hook exists, it will be executed in the parent process
+                #  but with already cloned arges (not possible to pickle an unbound kernel)
                 bench_res = do_bench_cudagraph(
                     kernel_call_obj,
                     rep=self.rep_t,
                     return_mode="median",
-                    use_isolated_process=use_isolated_process,
+                    use_isolated_process=self._use_isolated_process,
                     run_id=self.run_id,
                     path_prefix=str(self._obj_hash),
                 )
@@ -369,9 +371,9 @@ class Autotuner(KernelInterface):
 
 
     def _run_benchmarks(self, *args, configs, **kwargs):
-        if os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1":
+        if self._use_split_cache:
             self._update_triton_cache_path()
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}]  Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo}, run: {self.run_id})"
             )
@@ -435,7 +437,7 @@ class Autotuner(KernelInterface):
                     n_trials += self.bohb_max_n_trials
                     walltime_limit += self.bohb_max_search_time_s
                     overwrite = False
-                    if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                    if flag_print_debug:
                         print(
                             f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
                         )
@@ -494,7 +496,7 @@ class Autotuner(KernelInterface):
                 # timings = {best_config: result_trial_info_str}
                 # timings = {best_config: [0.001]}
                 timings = {best_config: result_cost}
-                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                if flag_print_debug:
                     print(
                         f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] BOHB finished after {total_smac_run_time}s (optimizer {total_optimizer_time}s), tested {num_tested_configs}, "
                         f"of which {len(failed_configs)} failed."
@@ -548,7 +550,7 @@ class Autotuner(KernelInterface):
                     # should_be_ready = (time.time() - self._start_time) > (5 * 60)
                     # if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
                     if self._use_fallback:
-                        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                        if flag_print_debug:
                             print(f"[triton-dejavu] {key} not in cache, starting to tune...")
                         # prune configs
                         used_cached_result = False
@@ -806,7 +808,8 @@ class ConfigSpace:
         if kwarg_conditions is None:
             kwarg_conditions = []
         self.kwargs = kwargs_with_lists
-	self.kwarg_keys = list(kwargs_with_lists.keys())
+        self.kwarg_keys = list(kwargs_with_lists.keys())
+        self.kwarg_types = get_type_dict({k: v[0] for k, v in kwargs_with_lists.items()})
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
         self._num_of_invalid_configs = 0
@@ -890,9 +893,11 @@ class ConfigSpace:
         config_space_dict = {}
         config_space_dict.update(self.kwargs)
         # TODO: make dynamic
-        config_space_dict["num_warps"] = self.num_warps
-        config_space_dict["num_stages"] = self.num_stages
-        config_space_dict["num_ctas"] = self.num_ctas
+        # config_space_dict["num_warps"] = self.num_warps
+        # config_space_dict["num_stages"] = self.num_stages
+        # config_space_dict["num_ctas"] = self.num_ctas
+        for p in __triton_config_parameter_names__:
+            config_space_dict[p] = getattr(self, p)
         cs = BohbConfigurationSpace(config_space_dict)
         return cs
 
@@ -917,16 +922,15 @@ class ConfigSpace:
         kwarg = {}
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
-            # TODO: other types possible?
-            kwarg[k] = int(bohb_config_dict[k])
+            kwarg[k] = self.kwarg_types[k](bohb_config_dict[k])
+        config_params = {p: __triton_config_default_types__[p](bohb_config_dict[p]) for p in __triton_config_parameter_names__}
         nc = Config(
             kwarg,
-            # TODO: make parameter names dynamic
-            # TODO: other types possible?
-            num_warps=int(bohb_config_dict["num_warps"]),
-            num_ctas=int(bohb_config_dict["num_ctas"]),
-            num_stages=int(bohb_config_dict["num_stages"]),
+            # num_warps=int(bohb_config_dict["num_warps"]),
+            # num_ctas=int(bohb_config_dict["num_ctas"]),
+            # num_stages=int(bohb_config_dict["num_stages"]),
             pre_hook=self.pre_hook,
+            **config_params,
         )
         # print(nc)
         return nc

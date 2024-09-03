@@ -100,8 +100,30 @@ def get_triton_config_parameter_names():
     return parameter_names
 
 
-def get_triton_config_defaults():
+def get_triton_config_defaults_values():
     dummy_config = triton.Config(kwargs={})
     parameter_names = get_triton_config_parameter_names()
     default_dict = {p: getattr(dummy_config, p) for p in parameter_names}
     return default_dict
+
+
+def get_type_dict(value_dict):
+    type_dict = {}
+    # type_dict should have callable members 
+    for k, v in value_dict.items():
+        if isinstance(v, int):
+            type_dict[k] = int
+        elif isinstance(v, bool):
+            type_dict[k] = bool
+        else:
+            # TODO: other types possible?
+            type_dict[k] = str
+    return type_dict
+
+
+def get_triton_config_defaults_types():
+    default_dict = get_triton_config_defaults_values()
+    type_dict = get_type_dict(default_dict)
+    return type_dict
+
+
