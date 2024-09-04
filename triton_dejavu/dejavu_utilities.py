@@ -115,6 +115,8 @@ def get_type_dict(value_dict):
             type_dict[k] = int
         elif isinstance(v, bool):
             type_dict[k] = bool
+        elif isinstance(v, type(None)):
+            type_dict[k] = lambda ignore: None
         else:
             # TODO: other types possible?
             type_dict[k] = str
