@@ -236,7 +236,7 @@ class DejavuStorage:
                 labels = ["ms", "min_ms", "max_ms"]
             nt = {
                 "values": vals,
-                "lables": labels,
+                "labels": labels,
                 "rep_t_ms": repetitiont,
                 "warmup_t_ms": warmupt,
             }
