@@ -91,6 +91,10 @@ So far, we think that the above listed combination determines the applicability 
 
 In addition, users can define a tag to be used by the dejavu storage to be able to differentiate different deployment scenarios (for otherwise identical value combinations).
 
+Please note that the above list does not include features that do not influence the decision of the autotuner, but influence the behaviour of the kernel or the JIT. For example, the precense or details of `pre_hook` or `post_hook` and also other [` specialization_data`](https://github.com/triton-lang/triton/blob/e87f877eb94efeaeb4ad8697f315932121dec5e0/python/triton/runtime/jit.py#L514) used by the JIT cache are not used by triton-dejavu. 
+
+#### Example
+
 Below is a simple example of how such a stored cache looks like (the “some_function” in the identifier is just there to help us humans analyzing what’s in the cache):
 
 ```
@@ -110,6 +114,13 @@ Stored cache:
 ```
 
 Our experiments show that our dejavu-autotuner removes the additional overhead of many autotuner configurations while still profiting from Tritons flexibility and increased performance.
+
+#### Known Limitations
+
+Although we think triton-dejavu is safe to use for most use cases, there is currently one caveat: 
+
+Configuration pruning: If `prune_configs_by` is used, the triton kernel configurations passed to the autotuner are pruned for every autotuner run, which severly changes the decision of the autotuner. However, triton-dejavu can not capture the pruning function and its output in a way that would allow the safe re-store of it. Therefore, as of now, a user is responsible to ensure the use of the pruning function in combination with autotune cache restore is safe.
+
 
 ### `ConfigSpaces`
 
