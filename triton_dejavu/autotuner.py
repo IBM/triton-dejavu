@@ -126,6 +126,7 @@ class Autotuner(KernelInterface):
         self._obj_hash = hash(self)
         # the key hash is not covered by fn.hash!
         self.key_hash = get_list_hash(key)
+        self.orig_keys = key
         self.configs_len = len(self.configs)
         self.config_kw_names = list(self.configs[0].kwargs.keys())
         self.key_idx = [arg_names.index(k) for k in key]
@@ -237,11 +238,26 @@ class Autotuner(KernelInterface):
             self.bohb_max_repeat = bo_max_repeat
 
         self._param_hash = self._get_param_hash()
-        # self.cache = {}
         all_pre_hook = self.config_space.get_global_pre_hook() if self.config_space is not None else None
         self.cache = global_dejavu_storage.restore_autotuner_cache(
             fn, self.configs_hash, self.key_hash, self._param_hash, all_pre_hook=all_pre_hook
         )
+        if configs and len(self.cache) > 1:
+            # iterate over given config list to detect pre_hooks on individual config level
+            # pre_hooks of individual Configs are not part of the config-list hash
+            #  (because it is not part of Config.__str__ but also, it shouldn't influence the autotuner result)
+            for kt, config in self.cache.items():
+                for oc in configs:
+                    if str(oc) != str(config):
+                        continue
+                    if oc.pre_hook is not None:
+                        config.pre_hook = oc.pre_hook
+                        if flag_print_debug_verbose:
+                            print(
+                                f"[triton-dejavu] added pre_hook to restored config {config}."
+                            )
+                        self.cache[kt] = config
+
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
             self.configs = global_dejavu_storage.get_used_configs(
                 fn, self.configs_hash, self.key_hash, self._param_hash
@@ -285,7 +301,6 @@ class Autotuner(KernelInterface):
         os.environ['TRITON_DEJAVU_INSTANCE_RUN_ID'] = run_id_str
 
     def _bench(self, *args, config, **meta):
-
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -551,7 +566,9 @@ class Autotuner(KernelInterface):
                     # if os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "0" and should_be_ready:
                     if not self._use_fallback:
                         if flag_print_debug:
-                            print(f"[triton-dejavu] {key} not in cache, starting to tune...")
+                            print(
+                                f"[triton-dejavu] {key} not in cache, starting to tune..."
+                            )
                         # prune configs
                         used_cached_result = False
                         pruned_configs = self.prune_configs(kwargs)
@@ -596,6 +613,8 @@ class Autotuner(KernelInterface):
                     self.rep_t,
                     self.warmup_t,
                     self.bench_time,
+                    self.use_cuda_graph,
+                    self.orig_keys,
                 )
                 if flag_print_autotuning:
                     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
