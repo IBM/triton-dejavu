@@ -43,12 +43,22 @@ import triton_dejavu
     #     num_ctas=[1],
     #     enable_warp_specialization=[False, True],
     # ),
-    # to test restore of pre hooks 
-    configs = [
-        triton.Config({'BLOCK_N_SIZE': 1024}, num_warps=4, num_stages=2),
-        triton.Config({'BLOCK_N_SIZE': 1024}, num_warps=8, num_stages=4, pre_hook=lambda nargs: nargs["output_ptr"].zero_()),
-        triton.Config({'BLOCK_N_SIZE': 2048}, num_warps=8, num_stages=4),
-        triton.Config({'BLOCK_N_SIZE': 4096}, num_warps=4, num_stages=2, pre_hook=lambda nargs: nargs["output_ptr"].zero_())
+    # to test restore of pre hooks
+    configs=[
+        triton.Config({"BLOCK_N_SIZE": 1024}, num_warps=4, num_stages=2),
+        triton.Config(
+            {"BLOCK_N_SIZE": 1024},
+            num_warps=8,
+            num_stages=4,
+            pre_hook=lambda nargs: nargs["output_ptr"].zero_(),
+        ),
+        triton.Config({"BLOCK_N_SIZE": 2048}, num_warps=8, num_stages=4),
+        triton.Config(
+            {"BLOCK_N_SIZE": 4096},
+            num_warps=4,
+            num_stages=2,
+            pre_hook=lambda nargs: nargs["output_ptr"].zero_(),
+        ),
     ],
     rep=10,
     warmup=5,

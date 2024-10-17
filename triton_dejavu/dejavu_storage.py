@@ -234,29 +234,21 @@ class DejavuStorage:
             vals = timings[key]
             if type(vals) is not list:
                 vals = [vals]
-            if len(vals) == 1:
-                labels = ["ms"]
-            else:
-                labels = ["ms", "min_ms", "max_ms"]
             if timings_data is None:
                 # it is protected by hash, so it is the same for all entries in the file
+                if len(vals) == 1:
+                    labels = ["ms"]
+                else:
+                    labels = ["ms", "min_ms", "max_ms"]
                 timings_data = {
                     "labels": labels,
                     "rep_t_ms": repetitiont,
                     "warmup_t_ms": warmupt,
                     "cuda_graphs": use_cuda_graph,
                 }
-            # nt = {
-            #     "values": vals,
-            #     "labels": labels,
-            #     "rep_t_ms": repetitiont,
-            #     "warmup_t_ms": warmupt,
-            # }
-            # if float("inf") in nt["values"]:
             if float("inf") in vals:
                 continue
             cache_json["cache"][str(key)] = str(config)
-            # cache_json["timings"][str(key)] = nt
             cache_json["timings"][str(key)] = vals
             cache_json["evaluated_configs"] = configs_len
             if config not in tmp_used_configs:

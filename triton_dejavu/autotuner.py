@@ -189,16 +189,18 @@ class Autotuner(KernelInterface):
         )
         if configs and len(self.cache) > 1:
             # iterate over given config list to detect pre_hooks on individual config level
-            # pre_hooks of individual Configs are not part of the config-list hash 
+            # pre_hooks of individual Configs are not part of the config-list hash
             #  (because it is not part of Config.__str__ but also, it shouldn't influence the autotuner result)
             for kt, config in self.cache.items():
                 for oc in configs:
-                    if str(oc) != str(config): 
+                    if str(oc) != str(config):
                         continue
                     if oc.pre_hook is not None:
                         config.pre_hook = oc.pre_hook
                         if flag_print_debug_verbose:
-                            print(f"[triton-dejavu] added pre_hook to restored config {config}.")
+                            print(
+                                f"[triton-dejavu] added pre_hook to restored config {config}."
+                            )
                         self.cache[kt] = config
 
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
@@ -225,7 +227,6 @@ class Autotuner(KernelInterface):
         return h
 
     def _bench(self, *args, config, **meta):
-
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -312,7 +313,9 @@ class Autotuner(KernelInterface):
                 if key not in self.cache:
                     if not self._use_fallback:
                         if flag_print_debug:
-                            print(f"[triton-dejavu] {key} not in cache, starting to tune...")
+                            print(
+                                f"[triton-dejavu] {key} not in cache, starting to tune..."
+                            )
                         # prune configs
                         used_cached_result = False
                         pruned_configs = self.prune_configs(kwargs)
