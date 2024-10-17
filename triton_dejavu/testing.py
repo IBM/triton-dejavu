@@ -34,6 +34,7 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
+
 # import signal
 # import ctypes
 # from distutils import sysconfig
@@ -50,8 +51,8 @@ __separate_process_dump_file__ = "/storage/tmp/dejavu-mp-dump.log"
 # # we need to go up 2 levels...
 # __so_lib_path__ = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), __so_lib_name__)
 # _c_sigalarm_so_ = ctypes.CDLL(__so_lib_path__)
-# 
-# 
+#
+#
 # def handle_timeout(signum, frame):
 #     raise TimeoutError()
 
@@ -191,7 +192,14 @@ class CompiledKernelRun:
 
 class KernelEvalCall:
     def __init__(
-        self, fn, arg_names, benchmarking_stream, cur_config, call_lambda, *args, **current
+        self,
+        fn,
+        arg_names,
+        benchmarking_stream,
+        cur_config,
+        call_lambda,
+        *args,
+        **current,
     ):
         self.fn = fn
         # self.args = args
@@ -212,6 +220,7 @@ class KernelEvalCall:
         # return self.fn.run(*self.args, **self.current)
         if not self._jit_was_triggered:
             self._jit_was_triggered = True
+
             def jit_with_timeout():
                 # signal.signal(signal.SIGALRM, handle_timeout)
                 # signal.alarm(self._jit_timeout_s)
@@ -223,14 +232,16 @@ class KernelEvalCall:
                 compile_end = time.time()
                 compile_time = compile_end - compile_start
                 if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-                    print(f"[triton-dejavu] First execution including JIT compilation took {compile_time}s.")
+                    print(
+                        f"[triton-dejavu] First execution including JIT compilation took {compile_time}s."
+                    )
                 # except TimeoutError as e:
                 #     print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
                 #     ret = None
                 # finally:
                 #     signal.alarm(0)
                 return ret
-            
+
             return jit_with_timeout()
         else:
             return self.call_lambda()
@@ -255,8 +266,8 @@ class KernelEvalCall:
     def get_compiled_run(self) -> CompiledKernelRun:
         # kernel = self.fn.run(*self.args, warmup=True, **self.current)
         # need to call pre-hook first...
-        self._call_pre_hook()        
-        
+        self._call_pre_hook()
+
         self.current["warmup"] = True
         compile_start = time.time()
         # signal.signal(signal.SIGALRM, handle_timeout)
@@ -308,9 +319,11 @@ class KernelEvalCall:
         wrapper_end = time.time()
         compile_time = compile_end - compile_start
         wrapper_time = wrapper_end - compile_end
-        
+
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            print(f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s.")
+            print(
+                f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s."
+            )
 
         return self.compiled_kernel
 
@@ -396,7 +409,7 @@ def _do_bench_cudagraph(
         print(f"bench_cudagraph failed with {e}")
         # return_dict["e"] = e
         tb = traceback.format_exc()
-        return_dict["e"] = f'Exception {e}; traceback: {tb}'
+        return_dict["e"] = f"Exception {e}; traceback: {tb}"
         print(tb)
     fn.cleanup()
     torch.cuda.empty_cache()

@@ -266,7 +266,9 @@ class DejavuStorage:
             self.used_configs[folder_name] = tmp_used_configs
             self.__store__()
 
-    def restore_autotuner_cache(self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None):
+    def restore_autotuner_cache(
+        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None
+    ):
         # we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
@@ -294,7 +296,7 @@ class DejavuStorage:
             kt = _create_tuple(k)
             va = _create_config_args(v)
             if all_pre_hook is not None:
-                va['pre_hook'] = all_pre_hook
+                va["pre_hook"] = all_pre_hook
             c = triton.Config(**va)
             ret[kt] = c
             if c not in tmp_used_configs:

@@ -17,8 +17,12 @@
 
 import sys
 import os
-from triton.runtime.cache import (FileCacheManager, default_cache_dir,
-                                  default_dump_dir, default_override_dir)
+from triton.runtime.cache import (
+    FileCacheManager,
+    default_cache_dir,
+    default_dump_dir,
+    default_override_dir,
+)
 
 
 def set_triton_cache_manager() -> None:
@@ -29,7 +33,7 @@ def set_triton_cache_manager() -> None:
 
 
 class CustomCacheManager(FileCacheManager):
-    """Re-implements Triton's cache manager, to 
+    """Re-implements Triton's cache manager, to
       1. allow a cache directory for each process
       2. and a different one for each triton-dejavu run.
 
@@ -51,10 +55,11 @@ class CustomCacheManager(FileCacheManager):
             self.cache_dir = os.path.join(self.cache_dir, self.key)
         else:
             # create cache directory if it doesn't exist
-            self.cache_dir = os.getenv("TRITON_CACHE_DIR",
-                                       "").strip() or default_cache_dir()
+            self.cache_dir = (
+                os.getenv("TRITON_CACHE_DIR", "").strip() or default_cache_dir()
+            )
             if self.cache_dir:
-                run_id = os.getenv("TRITON_DEJAVU_INSTANCE_RUN_ID", '000000-00000')
+                run_id = os.getenv("TRITON_DEJAVU_INSTANCE_RUN_ID", "000000-00000")
                 self.cache_dir = f"{self.cache_dir}_{os.getpid()}_{run_id}"
                 # print(f"setting triton cache dir to {self.cache_dir}")
                 self.cache_dir = os.path.join(self.cache_dir, self.key)
@@ -62,4 +67,3 @@ class CustomCacheManager(FileCacheManager):
                 os.makedirs(self.cache_dir, exist_ok=True)
             else:
                 raise RuntimeError("Could not create or locate cache dir")
-

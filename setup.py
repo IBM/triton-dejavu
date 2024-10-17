@@ -43,6 +43,7 @@ def find_version(filepath: str) -> str:
             return version_match.group(1)
         raise RuntimeError("Unable to find version string.")
 
+
 # c_module = Extension('sigalarm',
 #                      sources= ['triton_dejavu/sigalarm.c'],
 #                      extra_compile_args=['-shared','-fPIC'])

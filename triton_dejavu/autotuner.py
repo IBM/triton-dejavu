@@ -238,9 +238,17 @@ class Autotuner(KernelInterface):
             self.bohb_max_repeat = bo_max_repeat
 
         self._param_hash = self._get_param_hash()
-        all_pre_hook = self.config_space.get_global_pre_hook() if self.config_space is not None else None
+        all_pre_hook = (
+            self.config_space.get_global_pre_hook()
+            if self.config_space is not None
+            else None
+        )
         self.cache = global_dejavu_storage.restore_autotuner_cache(
-            fn, self.configs_hash, self.key_hash, self._param_hash, all_pre_hook=all_pre_hook
+            fn,
+            self.configs_hash,
+            self.key_hash,
+            self._param_hash,
+            all_pre_hook=all_pre_hook,
         )
         if configs and len(self.cache) > 1:
             # iterate over given config list to detect pre_hooks on individual config level
@@ -269,7 +277,9 @@ class Autotuner(KernelInterface):
                 )
         self.fallback_heuristic = fallback_heuristic
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
-        self._use_isolated_process = os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
+        self._use_isolated_process = (
+            os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
+        )
 
         # triton cache
         self._use_split_cache = os.environ.get("TRITON_DEJAVU_SPLIT_CACHE", "0") == "1"
@@ -298,7 +308,7 @@ class Autotuner(KernelInterface):
 
     def _update_triton_cache_path(self):
         run_id_str = f"{self._obj_hash}-{self.run_id}"
-        os.environ['TRITON_DEJAVU_INSTANCE_RUN_ID'] = run_id_str
+        os.environ["TRITON_DEJAVU_INSTANCE_RUN_ID"] = run_id_str
 
     def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -363,9 +373,7 @@ class Autotuner(KernelInterface):
             RuntimeError,
         ) as e:
             if flag_print_debug:
-                print(
-                    f"[triton-dejavu] testing config '{config}' failed with: '{e}'"
-                )
+                print(f"[triton-dejavu] testing config '{config}' failed with: '{e}'")
             # trying to avoid/reset CUDA error: an illegal memory access was encountered
             # gc.collect()
             # torch.cuda.empty_cache()
@@ -383,7 +391,6 @@ class Autotuner(KernelInterface):
                 if self.use_cuda_graph
                 else [float("inf"), float("inf"), float("inf")]
             )
-
 
     def _run_benchmarks(self, *args, configs, **kwargs):
         if self._use_split_cache:
@@ -442,7 +449,7 @@ class Autotuner(KernelInterface):
                 return bench_timings[0]
 
             # TODO
-            result_cost = float('inf')
+            result_cost = float("inf")
             total_trials = 0
             n_trials = self.bohb_max_n_trials
             walltime_limit = self.bohb_max_search_time_s
@@ -456,7 +463,7 @@ class Autotuner(KernelInterface):
                         print(
                             f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Re-run BO search because all previous trials failed (total iteration :{total_trials})."
                         )
- 
+
                 smac_scenario = Scenario(
                     self.bohb_config_space,
                     deterministic=True,
@@ -467,7 +474,10 @@ class Autotuner(KernelInterface):
                 # print('starting smac...')
                 exploration_EI = EI(xi=0.04)
                 smac_facade = HyperparameterOptimizationFacade(
-                    smac_scenario, eval_config, overwrite=overwrite, dask_client=None,
+                    smac_scenario,
+                    eval_config,
+                    overwrite=overwrite,
+                    dask_client=None,
                     # acquisition_function=exploration_EI
                 )
                 # need to force reset...
@@ -488,7 +498,9 @@ class Autotuner(KernelInterface):
                 complete_data_per_config = dict(run_history._data)
                 # list(complete_data_per_config.keys())
                 total_smac_run_time = smac_facade.optimizer.used_walltime
-                total_optimizer_time = smac_facade.optimizer.used_target_function_walltime
+                total_optimizer_time = (
+                    smac_facade.optimizer.used_target_function_walltime
+                )
                 failed_configs = [
                     cid
                     for cid, v in results_per_config.items()
@@ -532,12 +544,12 @@ class Autotuner(KernelInterface):
             if flag_print_debug_verbose:
                 print(f"Triton autotuning skipped, using given config: {kwargs}.")
             # TODO: call pre_hook or kwargs['pre_hook']?
-            if 'pre_hook' in kwargs and kwargs['pre_hook'] is not None:
+            if "pre_hook" in kwargs and kwargs["pre_hook"] is not None:
                 nargs = dict(zip(self.arg_names, args))
                 full_args = {**nargs, **kwargs}
-                kwargs['pre_hook'](full_args)
+                kwargs["pre_hook"](full_args)
                 # to avoid KeyError: 'Keyword argument pre_hook was specified but unrecognised'
-                del kwargs['pre_hook']
+                del kwargs["pre_hook"]
             ret = self.fn.run(
                 *args,
                 **kwargs,
@@ -617,7 +629,8 @@ class Autotuner(KernelInterface):
                     self.orig_keys,
                 )
                 if flag_print_autotuning:
-                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
+                    print(
+                        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
                         f"Triton autotuning for function {self.base_fn.__name__} finished after "
                         f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
                         f" evaluated {len(pruned_configs)} configurations;"
@@ -828,7 +841,9 @@ class ConfigSpace:
             kwarg_conditions = []
         self.kwargs = kwargs_with_lists
         self.kwarg_keys = list(kwargs_with_lists.keys())
-        self.kwarg_types = get_type_dict({k: v[0] for k, v in kwargs_with_lists.items()})
+        self.kwarg_types = get_type_dict(
+            {k: v[0] for k, v in kwargs_with_lists.items()}
+        )
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
         self._num_of_invalid_configs = 0
@@ -942,7 +957,10 @@ class ConfigSpace:
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
             kwarg[k] = self.kwarg_types[k](bohb_config_dict[k])
-        config_params = {p: __triton_config_default_types__[p](bohb_config_dict[p]) for p in __triton_config_parameter_names__}
+        config_params = {
+            p: __triton_config_default_types__[p](bohb_config_dict[p])
+            for p in __triton_config_parameter_names__
+        }
         nc = Config(
             kwarg,
             # num_warps=int(bohb_config_dict["num_warps"]),
