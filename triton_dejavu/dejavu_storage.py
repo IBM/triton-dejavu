@@ -64,11 +64,12 @@ __config_args__ = (
 __skip_config_args__ = ["enable_persistent"]
 
 
-def _get_cache_template(fn, configs_len=0):
+def _get_cache_template(fn, configs_len=0, autotuner_keys=None):
     ret = {
         "signature": str(fn),
         "total_bench_time_s": 0.0,
         "evaluated_configs": configs_len,
+        "keys": autotuner_keys,
         "cache": {},
         "timings": {},
     }
@@ -209,6 +210,8 @@ class DejavuStorage:
         repetitiont,
         warmupt,
         bench_time,
+        use_cuda_graph,
+        autotuner_keys,
     ):
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
@@ -216,13 +219,14 @@ class DejavuStorage:
             fn_name, fn_hash, configs_hash, key_hash, param_hash
         )
         if folder_name not in self.fn_storage:
-            cache_json = _get_cache_template(fn, configs_len)
+            cache_json = _get_cache_template(fn, configs_len, autotuner_keys)
             tmp_used_configs = []
         else:
             # TODO: reload content to avoid overwriting in case of parallel processes?
             cache_json = self.fn_storage[folder_name]
             tmp_used_configs = self.used_configs[folder_name]
         changes_made = False
+        timings_data = None
         for key, config in cache.items():
             if str(key) in cache_json["cache"]:
                 continue
@@ -234,16 +238,26 @@ class DejavuStorage:
                 labels = ["ms"]
             else:
                 labels = ["ms", "min_ms", "max_ms"]
-            nt = {
-                "values": vals,
-                "labels": labels,
-                "rep_t_ms": repetitiont,
-                "warmup_t_ms": warmupt,
-            }
-            if float("inf") in nt["values"]:
+            if timings_data is None:
+                # it is protected by hash, so it is the same for all entries in the file
+                timings_data = {
+                    "labels": labels,
+                    "rep_t_ms": repetitiont,
+                    "warmup_t_ms": warmupt,
+                    "cuda_graphs": use_cuda_graph,
+                }
+            # nt = {
+            #     "values": vals,
+            #     "labels": labels,
+            #     "rep_t_ms": repetitiont,
+            #     "warmup_t_ms": warmupt,
+            # }
+            # if float("inf") in nt["values"]:
+            if float("inf") in vals:
                 continue
             cache_json["cache"][str(key)] = str(config)
-            cache_json["timings"][str(key)] = nt
+            # cache_json["timings"][str(key)] = nt
+            cache_json["timings"][str(key)] = vals
             cache_json["evaluated_configs"] = configs_len
             if config not in tmp_used_configs:
                 tmp_used_configs.append(config)
@@ -253,7 +267,9 @@ class DejavuStorage:
                     f"[triton-dejavu] added {str(config)} for {folder_name} and key {key}"
                 )
         if changes_made:
+            cache_json["timings_data"] = timings_data
             cache_json["total_bench_time_s"] += bench_time
+            cache_json["keys"] = autotuner_keys
             self.fn_storage[folder_name] = cache_json
             self.used_configs[folder_name] = tmp_used_configs
             self.__store__()

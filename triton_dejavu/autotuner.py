@@ -105,6 +105,7 @@ class Autotuner(KernelInterface):
         self.configs_hash = get_config_list_hash(self.configs)
         # the key hash is not covered by fn.hash!
         self.key_hash = get_list_hash(key)
+        self.orig_keys = key
         self.configs_len = len(self.configs)
         self.config_kw_names = list(self.configs[0].kwargs.keys())
         self.key_idx = [arg_names.index(k) for k in key]
@@ -357,6 +358,8 @@ class Autotuner(KernelInterface):
                     self.rep_t,
                     self.warmup_t,
                     self.bench_time,
+                    self.use_cuda_graph,
+                    self.orig_keys,
                 )
                 if flag_print_autotuning:
                     print(
