@@ -31,8 +31,6 @@ import torch
 # import traceback
 
 # from triton.testing import do_bench, do_bench_cudagraph
-from triton.testing import do_bench as upstream_do_bench
-from triton.testing import do_bench_cudagraph as upstream_do_bench_cudagraph
 from triton_dejavu.testing import do_bench, do_bench_cudagraph, KernelEvalCall
 from triton import KernelInterface, Config, OutOfResources, CompilationError
 
@@ -107,6 +105,7 @@ class Autotuner(KernelInterface):
         bo_max_search_t=180,
         bo_max_share=1.0,
         bo_max_repeat=1,
+        quantiles=None,
     ):
         if config_space:
             self.config_space = config_space
@@ -189,6 +188,8 @@ class Autotuner(KernelInterface):
 
         self.warmup_t = warmup
         self.rep_t = rep
+        # self.quantiles = (0.5, 0.2, 0.8)
+        self.quantiles = quantiles
 
         self.fn = fn
         self.base_fn = fn
@@ -337,36 +338,29 @@ class Autotuner(KernelInterface):
             self.post_hook(args)
 
         try:
-            if self.use_cuda_graph:
-                # with torch.cuda.stream(self.benchmarking_stream):
-                #     bench_res = upstream_do_bench_cudagraph(kernel_call, rep=self.rep_t, return_mode="median")
-                kernel_call_obj = KernelEvalCall(
-                    self.fn,
-                    self.arg_names,
-                    self.benchmarking_stream,
-                    config,
-                    kernel_call,
-                    *args,
-                    **current,
-                )
-                # NOTE: if a config.pre_hook exists, it will be executed in the parent process
-                #  but with already cloned arges (not possible to pickle an unbound kernel)
-                bench_res = do_bench_cudagraph(
-                    kernel_call_obj,
-                    rep=self.rep_t,
-                    return_mode="median",
-                    use_isolated_process=self._use_isolated_process,
-                    run_id=self.run_id,
-                    path_prefix=str(self._obj_hash),
-                )
-                return bench_res
-            return upstream_do_bench(
+            kernel_call_obj = KernelEvalCall(
+                self.fn,
+                self.arg_names,
+                self.benchmarking_stream,
+                config,
                 kernel_call,
-                warmup=self.warmup_t,
-                rep=self.rep_t,
-                quantiles=(0.5, 0.2, 0.8),
-                fast_flush=False,
+                *args,
+                **current,
             )
+            # NOTE: if a config.pre_hook exists, it will be executed in the parent process
+            #  but with already cloned arges (not possible to pickle an unbound kernel)
+            bench_res = do_bench(
+                kernel_call_obj,
+                use_cuda_graphs=self.use_cuda_graph,
+                warmup=self.warmup_t,  # for eager mode
+                rep=self.rep_t,
+                quantiles=self.quantiles,
+                return_mode="median",
+                use_isolated_process=self._use_isolated_process,
+                run_id=self.run_id,
+                path_prefix=str(self._obj_hash),
+            )
+            return bench_res
         except (
             OutOfResources,
             CompileTimeAssertionFailure,
@@ -381,14 +375,16 @@ class Autotuner(KernelInterface):
             # traceback.clear_frames(sys.exc_info()[2])
             return (
                 float("inf")
-                if self.use_cuda_graph
+                # if self.use_cuda_graph
+                if self.quantiles is None
                 else [float("inf"), float("inf"), float("inf")]
             )
         except AssertionError as e:
             print(f"ERROR: {e}")
             return (
                 float("inf")
-                if self.use_cuda_graph
+                # if self.use_cuda_graph
+                if self.quantiles is None
                 else [float("inf"), float("inf"), float("inf")]
             )
 
@@ -444,7 +440,8 @@ class Autotuner(KernelInterface):
                 # bench_timings = self._bench(*args_copy, config=triton_config, **kwargs)
                 bench_timings = self._bench(*args, config=triton_config, **kwargs)
                 print(f"_bench returned {bench_timings}")
-                if self.use_cuda_graph:
+                # if self.use_cuda_graph:
+                if self.quantiles is None:
                     return bench_timings
                 return bench_timings[0]
 
@@ -592,10 +589,20 @@ class Autotuner(KernelInterface):
                         self.bench_time = bench_end - bench_start
                         self.cache[key] = best_config
                         self._timings[key] = timings[self.cache[key]]
+                        # if (
+                        #     self.use_cuda_graph and self._timings[key] == float("inf")
+                        # ) or (
+                        #     not self.use_cuda_graph
+                        #     and self._timings[key][0] == float("inf")
+                        # ):
+                        #     raise RuntimeError(
+                        #         f"All autotune examples failed (timing is {self._timings[key]})."
+                        #     )
                         if (
-                            self.use_cuda_graph and self._timings[key] == float("inf")
+                            self.quantiles is None
+                            and self._timings[key] == float("inf")
                         ) or (
-                            not self.use_cuda_graph
+                            not self.quantiles is None
                             and self._timings[key][0] == float("inf")
                         ):
                             raise RuntimeError(
@@ -707,6 +714,7 @@ def autotune(
     bo_max_search_t=180,
     bo_max_share=1.0,
     bo_max_repeat=1,
+    quantiles=None,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -770,6 +778,8 @@ def autotune(
     :type bo_max_search_t: int
     :param bo_max_share: Maximum percentage of the total config space BO can search through. This translates into a maximum trial number for the optimizer.
     :type bo_max_share: float
+    :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
+                        Default is `None` which will lead to the median (0.5 quantile).
     """
 
     def decorator(fn):
@@ -792,6 +802,7 @@ def autotune(
             bo_max_search_t,
             bo_max_share,
             bo_max_repeat,
+            quantiles,
         )
 
     return decorator
