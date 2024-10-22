@@ -31,7 +31,7 @@ import torch
 # import traceback
 
 # from triton.testing import do_bench, do_bench_cudagraph
-from triton_dejavu.testing import do_bench, do_bench_cudagraph, KernelEvalCall
+from triton_dejavu.testing import do_bench, KernelEvalCall
 from triton import KernelInterface, Config, OutOfResources, CompilationError
 
 from triton import __version__ as triton_version
