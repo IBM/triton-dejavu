@@ -617,7 +617,9 @@ class Autotuner(KernelInterface):
                                 f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
                             )
                 elif flag_print_debug_verbose:
-                    print(f"[triton-dejavu] Found config: {self.cache[key]} for key {key_orig}.")
+                    print(
+                        f"[triton-dejavu] Found config: {self.cache[key]} for key {key_orig}."
+                    )
                 config = self.cache[key]
             else:
                 config = self.configs[0]
