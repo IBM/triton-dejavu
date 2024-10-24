@@ -538,8 +538,8 @@ class Autotuner(KernelInterface):
         given_kwargs = list(kwargs.keys())
         required_config_args = self.config_kw_names + __additional_config_arg_check__
         if any(x in given_kwargs for x in required_config_args):
-            if flag_print_debug_verbose:
-                print(f"Triton autotuning skipped, using given config: {kwargs}.")
+            if flag_print_debug:
+                print(f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {kwargs}.")
             # TODO: call pre_hook or kwargs['pre_hook']?
             if "pre_hook" in kwargs and kwargs["pre_hook"] is not None:
                 nargs = dict(zip(self.arg_names, args))

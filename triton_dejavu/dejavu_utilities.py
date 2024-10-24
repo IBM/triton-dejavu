@@ -33,7 +33,8 @@ dejavu_version_major_minor = dejavu_version_major + dejavu_version_minor / math.
 flag_print_autotuning = os.environ.get("TRITON_PRINT_AUTOTUNING", None) == "1"
 flag_print_debug = os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1"
 flag_print_debug_verbose = os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1"
-
+if flag_print_debug_verbose:
+    flag_print_debug = True
 
 cuda_version = None
 
