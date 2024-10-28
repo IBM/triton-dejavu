@@ -25,6 +25,7 @@ import inspect
 from typing import Dict
 import itertools
 import torch
+import copy
 
 # TODO: still necessary?
 # import gc
@@ -100,13 +101,18 @@ class Autotuner(KernelInterface):
         rep=50,
         use_cuda_graph=False,
         config_space: ConfigSpace = None,
-        fallback_heuristic=None,
+        fallback_heuristic: callable = None,
+        informed_fallback: callable = None,
+        prepare_informed_fallback: callable = None,
         use_bo=False,
         bo_max_search_t=180,
         bo_max_share=1.0,
         bo_max_repeat=1,
         quantiles=None,
     ):
+        assert (fallback_heuristic is not None) or (
+            informed_fallback is not None
+        ), "either fallback_heuristic or infromed_fallback can be specified"
         if config_space:
             self.config_space = config_space
             assert not configs, "can't configure configs and config_space"
@@ -276,8 +282,47 @@ class Autotuner(KernelInterface):
                 print(
                     f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
                 )
+
         self.fallback_heuristic = fallback_heuristic
+        self.informed_fallback = informed_fallback
+        self._cache_for_fallback = None
+        if self.informed_fallback is not None:
+            # we make a copy of the cache as it is after init, because the fallbacks will modify it themselves
+            self._cache_for_fallback = copy.deepcopy(self.cache)
+            if prepare_informed_fallback is not None:
+                self._cache_for_fallback = prepare_informed_fallback(
+                    self._cache_for_fallback
+                )
+                assert (
+                    self._cache_for_fallback
+                ), "`prepare_informed_fallback must not return None"
+                if flag_print_debug_verbose:
+                    print(
+                        f"prepared cache for informed fallback: {self._cache_for_fallback}"
+                    )
+        if prepare_informed_fallback is not None and informed_fallback is None:
+            print(
+                "[triton-dejavu] WARNING: prepare_informed_fallback will be ignored because informed_fallback is not specified."
+            )
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
+        if self._use_fallback:
+            assert (
+                self.fallback_heuristic is not None
+                or self.informed_fallback is not None
+            ), "force to use fallback functions, but none specified"
+            if self.informed_fallback is not None:
+                self._fallback_call = lambda key: self.informed_fallback(
+                    key, self._cache_for_fallback
+                )
+                if flag_print_debug:
+                    print(
+                        f"[triton-dejavu] Using informed fallback function (custom cache prepare: {prepare_informed_fallback is not None})."
+                    )
+            else:
+                self._fallback_call = self.fallback_heuristic
+                if flag_print_debug:
+                    print("[triton-dejavu] Using fallback heuristic function.")
+
         self._use_isolated_process = (
             os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
         )
@@ -539,7 +584,9 @@ class Autotuner(KernelInterface):
         required_config_args = self.config_kw_names + __additional_config_arg_check__
         if any(x in given_kwargs for x in required_config_args):
             if flag_print_debug:
-                print(f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {kwargs}.")
+                print(
+                    f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {kwargs}."
+                )
             # TODO: call pre_hook or kwargs['pre_hook']?
             if "pre_hook" in kwargs and kwargs["pre_hook"] is not None:
                 nargs = dict(zip(self.arg_names, args))
@@ -611,7 +658,7 @@ class Autotuner(KernelInterface):
                         self.configs_timings = timings
                         self.pre_hook(args, reset_only=True)
                     else:
-                        self.cache[key] = self.fallback_heuristic(key_orig)
+                        self.cache[key] = self._fallback_call(key_orig)
                         if flag_print_autotuning:
                             print(
                                 f"[triton-dejavu] Determined config {self.cache[key]} based on heuristics for key {key_orig}."
@@ -714,6 +761,8 @@ def autotune(
     use_cuda_graph=False,
     config_space=None,
     fallback_heuristic=None,
+    informed_fallback=None,
+    prepare_informed_fallback=None,
     use_bo=False,
     bo_max_search_t=180,
     bo_max_share=1.0,
@@ -775,6 +824,13 @@ def autotune(
     :type config_space: triton_dejavu.ConfigSpace
     :param fallback_heuristic: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
     :type fallback_heursitic: callable(key)
+    :param informed_fallback: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
+                              This heuristic gets the cache as 2nd argument to make an *informed* decision based on the existing best known configs at start time.
+                              If `prepare_informed_fallback` is defined, then the returned dict of this function will be provided.
+    :type informed_fallback: callable(key, cache)
+    :param prepare_informed_fallback: A lambda function to apply preprocessing to the existing autotuner cache at start time to facilitate the `informed_fallback`
+                                      heuristic. The argument is the cache dict and any dict in return is expected.
+    :type prepare_informed_fallback: callable(cache) -> dict
     :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
     :type use_bo: bool
@@ -802,6 +858,8 @@ def autotune(
             use_cuda_graph,
             config_space,
             fallback_heuristic,
+            informed_fallback,
+            prepare_informed_fallback,
             use_bo,
             bo_max_search_t,
             bo_max_share,
