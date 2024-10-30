@@ -289,7 +289,10 @@ class Autotuner(KernelInterface):
         if self.informed_fallback is not None:
             # we make a copy of the cache as it is after init, because the fallbacks will modify it themselves
             self._cache_for_fallback = copy.deepcopy(self.cache)
-            if prepare_informed_fallback is not None:
+            if (
+                prepare_informed_fallback is not None
+                and len(self._cache_for_fallback) > 0
+            ):
                 self._cache_for_fallback = prepare_informed_fallback(
                     self._cache_for_fallback
                 )
@@ -304,13 +307,17 @@ class Autotuner(KernelInterface):
             print(
                 "[triton-dejavu] WARNING: prepare_informed_fallback will be ignored because informed_fallback is not specified."
             )
+        if informed_fallback is not None and len(self._cache_for_fallback) == 0:
+            print(
+                "[triton-dejavu] WARNING: infromed_fallback and prepare_informed_fallback will be ignored because existing cache is empty."
+            )
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
         if self._use_fallback:
             assert (
                 self.fallback_heuristic is not None
                 or self.informed_fallback is not None
             ), "force to use fallback functions, but none specified"
-            if self.informed_fallback is not None:
+            if self.informed_fallback is not None and len(self._cache_for_fallback) > 0:
                 self._fallback_call = lambda key: self.informed_fallback(
                     key, self._cache_for_fallback
                 )
