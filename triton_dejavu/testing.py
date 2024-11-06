@@ -294,7 +294,10 @@ class KernelEvalCall:
         # device = triton.runtime.driver.active.get_current_device()
         # stream = triton.runtime.driver.active.get_current_stream(device)
 
-        grid = self.current["grid"](self.current)
+        if callable(self.current["grid"]):
+            grid = self.current["grid"](self.current)
+        else:
+            grid = self.current["grid"]
         launch_metadata = kernel.launch_metadata(
             grid, self.benchmarking_stream, *non_constexpr_vals
         )
