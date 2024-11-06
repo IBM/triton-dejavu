@@ -110,9 +110,10 @@ class Autotuner(KernelInterface):
         bo_max_repeat=1,
         quantiles=None,
     ):
-        assert (fallback_heuristic is not None) or (
-            informed_fallback is not None
-        ), "either fallback_heuristic or infromed_fallback can be specified"
+        if fallback_heuristic:
+            assert informed_fallback is None, "either fallback_heuristic or infromed_fallback can be specified"
+        if informed_fallback:
+            assert fallback_heuristic is None, "either fallback_heuristic or infromed_fallback can be specified"
         if config_space:
             self.config_space = config_space
             assert not configs, "can't configure configs and config_space"
