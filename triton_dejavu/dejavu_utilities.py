@@ -60,8 +60,7 @@ def _get_cuda_version():
         )
         output = nvcc_output.split()
         release_idx = output.index("release") + 1
-        nvcc_cuda_version = output[release_idx].split(",")[0]
-        cuda_version = nvcc_cuda_version
+        cuda_version = output[release_idx].split(",")[0]
     except Exception as e:
         if flag_print_debug:
             print(f"[triton-dejavu] determining cuda version failed with: {e}")
@@ -76,7 +75,31 @@ def _get_cuda_version():
 
 def _get_rocm_version():
     global rocm_version
-    rocm_version ='unk'
+    if rocm_version is not None:
+        return rocm_version
+    if "_TRITON_DEJAVU_DETERMINED_ROCM_VERSION" in os.environ:
+        rocm_version = os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"]
+        return rocm_version
+    try:
+        from torch.utils.cpp_extension import ROCM_HOME
+        import subprocess
+
+        hipcc_output = subprocess.check_output(
+            [ROCM_HOME + "/bin/hipcc", "--version"], universal_newlines=True
+        )
+        output = hipcc_output.split()
+        release_idx = output.index("HIP") + 2
+        rocm_version_l = output[release_idx].split("-")[0].split('.')[:2]
+        rocm_version = '.'.join(rocm_version_l)
+    except Exception as e:
+        if flag_print_debug:
+            print(f"[triton-dejavu] determining rocm version failed with: {e}")
+        cuda_version = os.environ.get("CONTAINER_ROCM_VERSION", "unknown")
+        if cuda_version == "unknown":
+            raise Exception(
+                "Can't determine cuda version and also CONTAINER_ROCM_VERSION is not set"
+            )
+    os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"] = rocm_version
     return rocm_version
 
 
@@ -85,7 +108,7 @@ def get_storage_identifier():
         runtime_cuda_version = f'rocm_{_get_rocm_version()}'
     else:
         runtime_cuda_version = f'cuda_{_get_cuda_version()}'
-    gpu_name = torch.cuda.get_device_name().replace(" ", "_")
+    gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
     triton_version = triton.__version__
     torch_version = torch.__version__
     dejavu_identifier = f"dejavu_{dejavu_version}"
