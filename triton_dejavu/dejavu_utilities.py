@@ -37,6 +37,7 @@ if flag_print_debug_verbose:
     flag_print_debug = True
 
 cuda_version = None
+rocm_version = None
 
 
 def _get_cuda_version():
@@ -73,8 +74,17 @@ def _get_cuda_version():
     return cuda_version
 
 
+def _get_rocm_version():
+    global rocm_version
+    rocm_version ='unk'
+    return rocm_version
+
+
 def get_storage_identifier():
-    runtime_cuda_version = _get_cuda_version()
+    if torch.version.hip:
+        runtime_cuda_version = f'rocm_{_get_rocm_version()}'
+    else:
+        runtime_cuda_version = f'cuda_{_get_cuda_version()}'
     gpu_name = torch.cuda.get_device_name().replace(" ", "_")
     triton_version = triton.__version__
     torch_version = torch.__version__
@@ -83,7 +93,7 @@ def get_storage_identifier():
         # don't let patches void collected data
         # cache file must be compatible between minor versions
         dejavu_identifier = f"dejavu_{dejavu_version_major_minor}"
-    storage_identifier = f"{dejavu_identifier}/cuda_{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    storage_identifier = f"{dejavu_identifier}/{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
     return storage_identifier
 
 
