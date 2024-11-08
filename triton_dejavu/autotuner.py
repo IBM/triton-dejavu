@@ -68,6 +68,7 @@ __additional_config_arg_check__ = ["num_warps", "num_stages"]
 __triton_config_parameter_names__ = get_triton_config_parameter_names()
 __triton_config_default_values__ = get_triton_config_defaults_values()
 __triton_config_default_types__ = get_triton_config_defaults_types()
+__min_search_samples__ = int(os.getenv("_TRITON_DEJAVU_MIN_SEARCH_SAMPLES", "50"))
 
 
 def _all_kwargs(self):
@@ -105,19 +106,18 @@ class Autotuner(KernelInterface):
         informed_fallback: callable = None,
         prepare_informed_fallback: callable = None,
         use_bo=False,
+        use_random_search=False,
         search_max_search_t=180,
         search_max_share=1.0,
         search_max_repeat=1,
         quantiles=None,
     ):
-        if fallback_heuristic:
-            assert (
-                informed_fallback is None
-            ), "either fallback_heuristic or infromed_fallback can be specified"
-        if informed_fallback:
-            assert (
-                fallback_heuristic is None
-            ), "either fallback_heuristic or infromed_fallback can be specified"
+        assert not (
+            (informed_fallback is not None) and (fallback_heuristic is not None)
+        ), "either fallback_heuristic or infromed_fallback can be specified"
+        assert not (
+            use_bo and use_random_search
+        ), "either use_bo or use_random_search can be set"
         if config_space:
             self.config_space = config_space
             assert not configs, "can't configure configs and config_space"
@@ -217,6 +217,15 @@ class Autotuner(KernelInterface):
             self.benchmarking_stream = None
 
         self.use_bo = use_bo
+        self.use_random_search = use_random_search
+        self.search_max_repeat = search_max_repeat
+        self.search_max_n_trials = min(
+            int(max(__min_search_samples__, search_max_share * self.configs_len))
+            + self.config_space._num_of_invalid_configs,
+            self.configs_len,
+        )
+        self.max_search_time_s = search_max_search_t
+        self.max_search_t = search_max_search_t
         if self.use_bo:
             if not self.config_space or prune_configs_by:
                 raise Exception(
@@ -233,21 +242,17 @@ class Autotuner(KernelInterface):
 
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
-            # use 2% as starting point...
-            # share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
-            self.bohb_max_n_trials = (
-                int(min(max(50, search_max_share * self.configs_len), self.configs_len))
-                + self.config_space._num_of_invalid_configs
-            )
-            # self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_search_max_search_tIME", 'inf'))
-            self.bohb_max_search_time_s = search_max_search_t
-            # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_search_max_search_tIME", 2147483647))
-            # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_search_max_search_tIME", None)  # will be converted by library
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} and max walltime to {self.bohb_max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
+                    f"[triton-dejavu] Set n_trials for BOHB to {self.search_max_n_trials} and max walltime to {self.max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
                 )
-            self.bohb_max_repeat = search_max_repeat
+        if self.use_random_search:
+            if prune_configs_by:
+                raise Exception(
+                    f"[triton-dejavu] Random search can only be used without prune_configs_by!"
+                )
+            # just test import, random list is generated at every search
+            import numpy as np
 
         self._param_hash = self._get_param_hash()
         all_pre_hook = (
@@ -353,7 +358,7 @@ class Autotuner(KernelInterface):
         hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
         # hs = (
         #     f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
-        #     f"bo_max_trials {self.bohb_max_n_trials} bo_timeout {self.bohb_max_search_time_s}"
+        #     f"bo_max_trials {self.search_max_n_trials} bo_timeout {self.max_search_time_s}"
         # )
         # not relevant
         # hs += get_list_hash(self.reset_idx)
@@ -452,14 +457,14 @@ class Autotuner(KernelInterface):
             print(
                 f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}]  Started benchmarking of {len(configs)} configurations... (use_bo: {self.use_bo}, run: {self.run_id})"
             )
-        if not self.use_bo:
+        if not self.use_bo and not self.use_random_search:
             timings = {
                 config: self._bench(*args, config=config, **kwargs)
                 for config in configs
             }
             best_config = builtins.min(timings, key=timings.get)
 
-        else:
+        elif self.use_bo:
             from ConfigSpace import Configuration as BohbConfiguration
 
             # from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
@@ -505,13 +510,13 @@ class Autotuner(KernelInterface):
             # TODO
             result_cost = float("inf")
             total_trials = 0
-            n_trials = self.bohb_max_n_trials
-            walltime_limit = self.bohb_max_search_time_s
+            n_trials = self.search_max_n_trials
+            walltime_limit = self.max_search_time_s
             overwrite = True
-            while np.isinf(result_cost) and total_trials < self.bohb_max_repeat:
+            while np.isinf(result_cost) and total_trials < self.search_max_repeat:
                 if total_trials > 0:
-                    n_trials += self.bohb_max_n_trials
-                    walltime_limit += self.bohb_max_search_time_s
+                    n_trials += self.search_max_n_trials
+                    walltime_limit += self.max_search_time_s
                     overwrite = False
                     if flag_print_debug:
                         print(
@@ -587,6 +592,47 @@ class Autotuner(KernelInterface):
                 total_trials += 1
             # for i, r in self._restore_args.items():
             #         args[i].copy_(r)
+
+        elif self.use_random_search:
+            import numpy as np
+
+            rng = np.random.default_rng()
+            start_time = time.time()
+            total_trials = 0
+            result_cost = float("inf")
+            n_trials = self.search_max_n_trials
+            walltime_limit = self.max_search_time_s
+            timings = {}
+            best_config = None
+            while np.isinf(result_cost) and total_trials < self.search_max_repeat:
+                if total_trials > 0:
+                    n_trials += self.search_max_n_trials
+                    walltime_limit += self.max_search_time_s
+                    if flag_print_debug:
+                        print(
+                            f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Re-run random search because all previous trials failed (total iteration :{total_trials})."
+                        )
+
+                random_search_list = rng.choice(
+                    len(self.configs), self.search_max_n_trials, replace=False
+                )
+                for ci in random_search_list:
+                    this_config = self.configs[ci]
+                    print(f"\ntesting {this_config}")
+                    bench_timings = self._bench(*args, config=this_config, **kwargs)
+                    print(f"_bench returned {bench_timings}")
+                    timings[this_config] = bench_timings
+                    if self.quantiles is None:
+                        if bench_timings < result_cost:
+                            best_config = this_config
+                            result_cost = bench_timings
+                    else:
+                        if bench_timings[0] < result_cost:
+                            best_config = this_config
+                            result_cost = bench_timings[0]
+                    if start_time + walltime_limit < time.time():
+                        # timeout
+                        break
 
         self.run_id += 1
         return timings, best_config
@@ -776,6 +822,7 @@ def autotune(
     informed_fallback=None,
     prepare_informed_fallback=None,
     use_bo=False,
+    use_random_search=False,
     search_max_search_t=180,
     search_max_share=1.0,
     search_max_repeat=1,
@@ -846,9 +893,12 @@ def autotune(
     :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
     :type use_bo: bool
-    :param search_max_search_t: Maximum search time (in seconds) for BO.
+    :param use_random_search: Activate Random Searchs to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
+                   This feature can be used in combination with config_space and config lists. However, prune_configs_by must not be provided.
+    :type use_random_search: bool
+    :param search_max_search_t: Maximum search time (in seconds) for BO and Random Search.
     :type search_max_search_t: int
-    :param search_max_share: Maximum percentage of the total config space BO can search through. This translates into a maximum trial number for the optimizer.
+    :param search_max_share: Maximum percentage of the total config space BO and Random Search can search through. This translates into a maximum trial number for the optimizer.
     :type search_max_share: float
     :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
                         Default is `None` which will lead to the median (0.5 quantile).
@@ -873,6 +923,7 @@ def autotune(
             informed_fallback,
             prepare_informed_fallback,
             use_bo,
+            use_random_search,
             search_max_search_t,
             search_max_share,
             search_max_repeat,
