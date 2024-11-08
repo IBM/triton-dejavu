@@ -105,9 +105,9 @@ class Autotuner(KernelInterface):
         informed_fallback: callable = None,
         prepare_informed_fallback: callable = None,
         use_bo=False,
-        bo_max_search_t=180,
-        bo_max_share=1.0,
-        bo_max_repeat=1,
+        search_max_search_t=180,
+        search_max_share=1.0,
+        search_max_repeat=1,
         quantiles=None,
     ):
         if fallback_heuristic:
@@ -236,18 +236,18 @@ class Autotuner(KernelInterface):
             # use 2% as starting point...
             # share_of_trials_as_max = float(os.environ.get('TRITON_DEJAVU_BO_MAX_TRIAL_SHARE', 0.02))
             self.bohb_max_n_trials = (
-                int(min(max(50, bo_max_share * self.configs_len), self.configs_len))
+                int(min(max(50, search_max_share * self.configs_len), self.configs_len))
                 + self.config_space._num_of_invalid_configs
             )
-            # self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 'inf'))
-            self.bohb_max_search_time_s = bo_max_search_t
-            # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", 2147483647))
-            # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_BO_MAX_SEARCH_TIME", None)  # will be converted by library
+            # self.bohb_max_search_time_s = float(os.environ.get("TRITON_DEJAVU_search_max_search_tIME", 'inf'))
+            self.bohb_max_search_time_s = search_max_search_t
+            # self.bohb_max_search_time_s = int(os.environ.get("TRITON_DEJAVU_search_max_search_tIME", 2147483647))
+            # self.bohb_max_search_time_s = os.environ.get("TRITON_DEJAVU_search_max_search_tIME", None)  # will be converted by library
             if flag_print_debug:
                 print(
                     f"[triton-dejavu] Set n_trials for BOHB to {self.bohb_max_n_trials} and max walltime to {self.bohb_max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
                 )
-            self.bohb_max_repeat = bo_max_repeat
+            self.bohb_max_repeat = search_max_repeat
 
         self._param_hash = self._get_param_hash()
         all_pre_hook = (
@@ -776,9 +776,9 @@ def autotune(
     informed_fallback=None,
     prepare_informed_fallback=None,
     use_bo=False,
-    bo_max_search_t=180,
-    bo_max_share=1.0,
-    bo_max_repeat=1,
+    search_max_search_t=180,
+    search_max_share=1.0,
+    search_max_repeat=1,
     quantiles=None,
 ):
     """
@@ -846,10 +846,10 @@ def autotune(
     :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
     :type use_bo: bool
-    :param bo_max_search_t: Maximum search time (in seconds) for BO.
-    :type bo_max_search_t: int
-    :param bo_max_share: Maximum percentage of the total config space BO can search through. This translates into a maximum trial number for the optimizer.
-    :type bo_max_share: float
+    :param search_max_search_t: Maximum search time (in seconds) for BO.
+    :type search_max_search_t: int
+    :param search_max_share: Maximum percentage of the total config space BO can search through. This translates into a maximum trial number for the optimizer.
+    :type search_max_share: float
     :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
                         Default is `None` which will lead to the median (0.5 quantile).
     """
@@ -873,9 +873,9 @@ def autotune(
             informed_fallback,
             prepare_informed_fallback,
             use_bo,
-            bo_max_search_t,
-            bo_max_share,
-            bo_max_repeat,
+            search_max_search_t,
+            search_max_share,
+            search_max_repeat,
             quantiles,
         )
 
