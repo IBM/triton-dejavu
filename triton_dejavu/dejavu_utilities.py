@@ -22,6 +22,12 @@ import math
 
 from triton_dejavu import __version__ as dejavu_version
 
+
+__storage_env_var__ = "TRITON_DEJAVU_STORAGE"
+__tag_env_var__ = "TRITON_DEJAVU_TAG"
+__tag_default__ = "default"
+
+__tmp_path_folder_name__ = "tmp"
 __dejavu_version_major_minor_s__ = ".".join(dejavu_version.split(".")[:2])
 dejavu_version_major = int(dejavu_version.split(".")[0])
 __dejavu_version_minor_s__ = dejavu_version.split(".")[1]
@@ -103,7 +109,35 @@ def _get_rocm_version():
     return rocm_version
 
 
+def get_storage_prefix():
+    storage_prefix = os.environ.get(__storage_env_var__, "none")
+    if storage_prefix == "none":
+        raise Exception(
+            f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
+        )
+    dir_name = os.path.dirname(storage_prefix)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name, 0o0777)
+    return storage_prefix
+
+
+def get_storage_tag():
+    # so it could change during execution...
+    storage_tag = os.environ.get(__tag_env_var__, __tag_default__)
+    return storage_tag
+
+
+def _get_dejavu_identifier():
+    dejavu_identifier = f"dejavu_{dejavu_version}"
+    if dejavu_version_major_minor >= 0.5:
+        # don't let patches void collected data
+        # cache file must be compatible between minor versions
+        dejavu_identifier = f"dejavu_{dejavu_version_major_minor}"
+    return dejavu_identifier
+
+
 def get_storage_identifier():
+    # not an absolute path!
     if torch.version.hip:
         runtime_cuda_version = f"rocm_{_get_rocm_version()}"
     else:
@@ -111,12 +145,19 @@ def get_storage_identifier():
     gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
     triton_version = triton.__version__
     torch_version = torch.__version__
-    dejavu_identifier = f"dejavu_{dejavu_version}"
-    if dejavu_version_major_minor >= 0.5:
-        # don't let patches void collected data
-        # cache file must be compatible between minor versions
-        dejavu_identifier = f"dejavu_{dejavu_version_major_minor}"
+    dejavu_identifier = _get_dejavu_identifier()
     storage_identifier = f"{dejavu_identifier}/{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    return storage_identifier
+
+
+def get_tmp_storage_path():
+    storage_prefix = get_storage_prefix()
+    storage_tag = get_storage_tag()
+    dejavu_identifier = _get_dejavu_identifier()
+    storage_identifier = f"{storage_prefix}/{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
+    dir_name = os.path.dirname(storage_identifier)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name, 0o0777)
     return storage_identifier
 
 

@@ -34,14 +34,16 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
+from triton_dejavu.dejavu_utilities import get_tmp_storage_path
 
 # import signal
 # import ctypes
 # from distutils import sysconfig
 
 
-# __separate_process_dump_file__ = '/tmp/dejavu-mp-dump.log'
-__separate_process_dump_file__ = "/storage/tmp/dejavu-mp-dump.log"
+__separate_process_dump_file__ = (
+    f"{get_tmp_storage_path}/isolated_bench/dejavu-mp-dump.log"
+)
 # __jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
 # if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
 #     print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
@@ -447,7 +449,7 @@ def do_bench(
     return_mode="mean",
     use_isolated_process=False,
     run_id=0,
-    path_prefix="tmp",
+    path_prefix="tensor_dump",
     verify_out_index=None,
 ):
     """
@@ -555,7 +557,7 @@ def do_bench(
                 f"after kill: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. "
             )
         if not np.isnan(ret) and verify_out_index is not None:
-            tensor_path = f"/storage/tensor_dump/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}-idx{verify_out_index}.npy"
+            tensor_path = f"{get_tmp_storage_path}/{path_prefix}/v0_{fn.fn.hash}-run{run_id:06d}-idx{verify_out_index}.npy"
             target_tensor = (
                 compiled_fn.non_constsexpr_vals[verify_out_index].cpu().numpy()
             )

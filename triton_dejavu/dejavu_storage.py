@@ -30,13 +30,9 @@ from .dejavu_utilities import (
     get_storage_identifier,
     flag_print_debug,
     flag_print_debug_verbose,
+    get_storage_prefix,
+    get_storage_tag,
 )
-
-
-__storage_env_var__ = "TRITON_DEJAVU_STORAGE"
-__tag_env_var__ = "TRITON_DEJAVU_TAG"
-__tag_default__ = "default"
-storage_tag = os.environ.get(__tag_env_var__, __tag_default__)
 
 
 def _create_tuple(k):
@@ -127,6 +123,7 @@ def _wait_fn_hash(fn):
 
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
+    storage_tag = get_storage_tag()
     # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
     # hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
     # folder_tree_name = f"{fn_name}-{hash_of_hash}/{storage_tag}"
@@ -166,11 +163,7 @@ def get_string_hash(s):
 
 class DejavuStorage:
     def __init__(self) -> None:
-        self.storage_prefix = os.environ.get(__storage_env_var__, "none")
-        if self.storage_prefix == "none":
-            raise Exception(
-                f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
-            )
+        self.storage_prefix = get_storage_prefix()
         self.storage_identifier = get_storage_identifier()
         self.storage_path = os.path.abspath(
             f"{self.storage_prefix}/{self.storage_identifier}/"
