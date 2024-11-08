@@ -253,6 +253,10 @@ class Autotuner(KernelInterface):
                 )
             # just test import, random list is generated at every search
             import numpy as np
+            if flag_print_debug:
+                print(
+                    f"[triton-dejavu] Set n_trials for Random Search to {self.search_max_n_trials} and max walltime to {self.max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
+                )
 
         self._param_hash = self._get_param_hash()
         all_pre_hook = (
@@ -604,6 +608,9 @@ class Autotuner(KernelInterface):
             walltime_limit = self.max_search_time_s
             timings = {}
             best_config = None
+            num_tested_configs = 0
+            failed_configs = []
+            worked_configs = []
             while np.isinf(result_cost) and total_trials < self.search_max_repeat:
                 if total_trials > 0:
                     n_trials += self.search_max_n_trials
@@ -626,13 +633,31 @@ class Autotuner(KernelInterface):
                         if bench_timings < result_cost:
                             best_config = this_config
                             result_cost = bench_timings
+                        if np.isnan(bench_timings):
+                            failed_configs.append(ci)
+                        else:
+                            worked_configs.append(ci)
                     else:
                         if bench_timings[0] < result_cost:
                             best_config = this_config
                             result_cost = bench_timings[0]
-                    if start_time + walltime_limit < time.time():
+                        if np.isnan(bench_timings[0]):
+                            failed_configs.append(ci)
+                        else:
+                            worked_configs.append(ci)
+                    num_tested_configs += 1
+                    if (start_time + walltime_limit) < time.time():
                         # timeout
+                        print(f"random search timeout after {time.time() - start_time}")
                         break
+                if flag_print_debug:
+                    print(
+                        f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] Random Search finished after {time.time() - start_time}s, tested {num_tested_configs}, "
+                        f"of which {len(failed_configs)} failed."
+                    )
+                    print(f"failed ids: {failed_configs}")
+                    print(f"worked ids: {worked_configs}")
+                total_trials += 1
 
         self.run_id += 1
         return timings, best_config
