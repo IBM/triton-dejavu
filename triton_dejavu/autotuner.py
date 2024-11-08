@@ -253,6 +253,7 @@ class Autotuner(KernelInterface):
                 )
             # just test import, random list is generated at every search
             import numpy as np
+
             if flag_print_debug:
                 print(
                     f"[triton-dejavu] Set n_trials for Random Search to {self.search_max_n_trials} and max walltime to {self.max_search_time_s}s (invalid configs in space: {self.config_space._num_of_invalid_configs})."
@@ -925,6 +926,9 @@ def autotune(
     :type search_max_search_t: int
     :param search_max_share: Maximum percentage of the total config space BO and Random Search can search through. This translates into a maximum trial number for the optimizer.
     :type search_max_share: float
+    :param search_max_repeat: Maximum repetition of BO or Random Search in case all experiments failed (default 1). This is helpful if very large search spaces with
+                              many invalid configurations are searched and therefore there exists a chance of finding only invalid configurations during a short search time.
+    :type search_max_repeat: int
     :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
                         Default is `None` which will lead to the median (0.5 quantile).
     """
