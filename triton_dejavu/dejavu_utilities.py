@@ -88,8 +88,8 @@ def _get_rocm_version():
         )
         output = hipcc_output.split()
         release_idx = output.index("HIP") + 2
-        rocm_version_l = output[release_idx].split("-")[0].split('.')[:2]
-        rocm_version = '.'.join(rocm_version_l)
+        rocm_version_l = output[release_idx].split("-")[0].split(".")[:2]
+        rocm_version = ".".join(rocm_version_l)
     except Exception as e:
         if flag_print_debug:
             print(f"[triton-dejavu] determining rocm version failed with: {e}")
@@ -104,9 +104,9 @@ def _get_rocm_version():
 
 def get_storage_identifier():
     if torch.version.hip:
-        runtime_cuda_version = f'rocm_{_get_rocm_version()}'
+        runtime_cuda_version = f"rocm_{_get_rocm_version()}"
     else:
-        runtime_cuda_version = f'cuda_{_get_cuda_version()}'
+        runtime_cuda_version = f"cuda_{_get_cuda_version()}"
     gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
     triton_version = triton.__version__
     torch_version = torch.__version__
