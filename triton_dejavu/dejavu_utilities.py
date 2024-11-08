@@ -115,9 +115,8 @@ def get_storage_prefix():
         raise Exception(
             f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
         )
-    dir_name = os.path.dirname(storage_prefix)
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name, 0o0777)
+    if not os.path.exists(storage_prefix):
+        os.makedirs(storage_prefix, 0o0777)
     return storage_prefix
 
 
@@ -155,9 +154,8 @@ def get_tmp_storage_path():
     storage_tag = get_storage_tag()
     dejavu_identifier = _get_dejavu_identifier()
     storage_identifier = f"{storage_prefix}/{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
-    dir_name = os.path.dirname(storage_identifier)
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name, 0o0777)
+    if not os.path.exists(storage_identifier):
+        os.makedirs(storage_identifier, 0o0777)
     return storage_identifier
 
 
