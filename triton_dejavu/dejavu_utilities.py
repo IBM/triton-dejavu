@@ -47,9 +47,11 @@ rocm_version = None
 
 
 def _get_cuda_version():
-    """Get the CUDA version from nvcc.
+    """
+    Get CUDA runtime/driver version (i.e. which ptxas is used).
+    This version is often different from the cuda version pytorch uses internally.
 
-    Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
+    Based on https://github.com/triton-lang/triton/blob/9d6736a501d0499348d48d192b6260338ca19da0/third_party/nvidia/backend/compiler.py#L32-L37
     """
     global cuda_version
     if cuda_version is not None:
@@ -58,15 +60,21 @@ def _get_cuda_version():
         cuda_version = os.environ["_TRITON_DEJAVU_DETERMINED_CUDA_VERSION"]
         return cuda_version
     try:
-        from torch.utils.cpp_extension import CUDA_HOME
         import subprocess
+        import re
 
-        nvcc_output = subprocess.check_output(
-            [CUDA_HOME + "/bin/nvcc", "-V"], universal_newlines=True
+        triton_backend_dir = os.path.dirname(triton.backends.__file__)
+        ptxas_path = os.path.abspath(
+            os.path.join(triton_backend_dir, "nvidia/bin/ptxas")
         )
-        output = nvcc_output.split()
-        release_idx = output.index("release") + 1
-        cuda_version = output[release_idx].split(",")[0]
+
+        result = subprocess.check_output(
+            [ptxas_path, "--version"], stderr=subprocess.STDOUT
+        )
+        version = re.search(
+            r".*release (\d+\.\d+).*", result.decode("utf-8"), flags=re.MULTILINE
+        )
+        cuda_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
             print(f"[triton-dejavu] determining cuda version failed with: {e}")
@@ -80,6 +88,10 @@ def _get_cuda_version():
 
 
 def _get_rocm_version():
+    """
+    Get ROCM runtime/driver version (i.e. which rocm linker is used).
+    This version is often different from the rocm version pytorch uses internally.
+    """
     global rocm_version
     if rocm_version is not None:
         return rocm_version
@@ -87,16 +99,21 @@ def _get_rocm_version():
         rocm_version = os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"]
         return rocm_version
     try:
-        from torch.utils.cpp_extension import ROCM_HOME
         import subprocess
+        import re
 
-        hipcc_output = subprocess.check_output(
-            [ROCM_HOME + "/bin/hipcc", "--version"], universal_newlines=True
+        rocm_ldd_path = triton.backends.backends["amd"].compiler.path_to_rocm_lld()
+        rocm_dir = os.path.dirname(rocm_ldd_path)
+        amdgpu_arch_path = os.path.abspath(os.path.join(rocm_dir, "amdgpu-arch"))
+
+        result = subprocess.check_output(
+            [amdgpu_arch_path, "--version"],
+            stderr=subprocess.STDOUT,
         )
-        output = hipcc_output.split()
-        release_idx = output.index("HIP") + 2
-        rocm_version_l = output[release_idx].split("-")[0].split(".")[:2]
-        rocm_version = ".".join(rocm_version_l)
+        version = re.search(
+            r".*roc-(\d+\.\d+.\d+).*", result.decode("utf-8"), flags=re.MULTILINE
+        )
+        rocm_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
             print(f"[triton-dejavu] determining rocm version failed with: {e}")
