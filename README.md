@@ -6,7 +6,7 @@ This small framework is based on the [Triton autotuner](https://github.com/trito
 1. Store and safely restore autotuner states using JSON files. 
 2. `ConfigSpaces` to explore a defined space exhaustively.
 
-Additonally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
+Additionally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
 
 
 Installation
@@ -77,7 +77,7 @@ Our triton-dejavu autotuner is based on the [upstream autotuner](https://github.
 
 To determine if a previously stored cache is still applicable, we use the combination of multiple values:
 
-- cuda runtime version
+- cuda runtime version (i.e. the ptxas used by triton) / rocm runtime version (i.e. the rocm ldd used by triton)
 - pytorch version
 - triton version
 - GPU type
@@ -120,7 +120,7 @@ Our experiments show that our dejavu-autotuner removes the additional overhead o
 
 Although we think triton-dejavu is safe to use for most use cases, there is currently one caveat: 
 
-Configuration pruning: If `prune_configs_by` is used, the triton kernel configurations passed to the autotuner are pruned for every autotuner run, which severly changes the decision of the autotuner. However, triton-dejavu can not capture the pruning function and its output in a way that would allow the safe re-store of it. Therefore, as of now, a user is responsible to ensure the use of the pruning function in combination with autotune cache restore is safe.
+Configuration pruning: If `prune_configs_by` is used, the triton kernel configurations passed to the autotuner are pruned for every autotuner run, which severely changes the decision of the autotuner. However, triton-dejavu can not capture the pruning function and its output in a way that would allow the safe re-store of it. Therefore, as of now, a user is responsible to ensure the use of the pruning function in combination with autotune cache restore is safe.
 
 
 ### `ConfigSpaces`
@@ -151,7 +151,7 @@ During generation of the list, configuration options that are only available on 
 
 ### Configuration passthrough
 
-The autotuner of triton-dejavu checks if the provided `kwargs` of a triton kernel invokation contains configuration parameters. If yes, the autotuner run is skipped and the provided configuration is used. This feature was added for situations where the application can provide configurations in some circumstances and therefore the autotuner has to be disabled in some cases but not all. 
+The autotuner of triton-dejavu checks if the provided `kwargs` of a triton kernel invocation contains configuration parameters. If yes, the autotuner run is skipped and the provided configuration is used. This feature was added for situations where the application can provide configurations in some circumstances and therefore the autotuner has to be disabled in some cases but not all. 
 
 ### Fallback heuristic
 
@@ -172,7 +172,7 @@ If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message abou
 Compatibility
 ------------------
 
-Triton-dejavu is currently compatible (and tested) with triton versions 2.2 and newer.
+Triton-dejavu is currently compatible (and tested) with triton versions 2.2 and newer. Triton-dejavu is compatible with both officially supported triton backends (nvidia and amd).
 
 
 Environment variables
