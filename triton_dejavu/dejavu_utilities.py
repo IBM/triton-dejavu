@@ -152,7 +152,7 @@ def get_tmp_storage_path():
     storage_prefix = get_storage_prefix()
     storage_tag = get_storage_tag()
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{storage_prefix}/{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
+    storage_identifier = f"{storage_prefix}/.{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
     if not os.path.exists(storage_identifier):
         os.makedirs(storage_identifier, 0o0777)
     return storage_identifier
