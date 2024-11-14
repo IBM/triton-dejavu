@@ -111,9 +111,9 @@ async def _get_fn_hash(fn: triton.JITFunction):
     while fn.hash is None:
         await asyncio.sleep(0.1)
     starting_line_number = str(fn.starting_line_number)
-    corrected_fn_hash = fn.hash[:-(len(starting_line_number))]
+    corrected_fn_hash = fn.hash[: -(len(starting_line_number))]
     # assert fn.hash == corrected_fn_hash + starting_line_number
-    return corrected_fn_hash 
+    return corrected_fn_hash
 
 
 def _wait_fn_hash(fn):
@@ -126,12 +126,7 @@ def _wait_fn_hash(fn):
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
     storage_tag = get_storage_tag()
-    # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
-    # hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
-    # folder_tree_name = f"{fn_name}-{hash_of_hash}/{storage_tag}"
-    # hash_of_hash = get_string_hash(f"{fn_hash}-{key_hash}")
     fn_hash_l = get_string_hash(f"{fn_hash}")
-    # folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/kernel_configs-{configs_hash}/code_version-{hash_of_hash}/{storage_tag}"
     folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/code_version-{fn_hash_l}/tune_features-{key_hash}/kernel_configs-{configs_hash}/{storage_tag}"
     return folder_tree_name
 

@@ -362,9 +362,6 @@ class Autotuner(KernelInterface):
         # search params are not always managed by a tag, so per default we should hash them
         if os.getenv("TRITON_DEJAVU_HASH_SEARCH_PARAMS", "1") == "1":
             hs += f" use_bo {self.use_bo} use_random {self.use_random_search} max_search_n {self.search_max_n_trials} max_search_t {self.max_search_time_s}"
-        # not relevant
-        # hs += get_list_hash(self.reset_idx)
-        # hs += get_list_hash(self.restore_idx)
         # TODO: how to hash the custom hooks?
         #  inspect cant find it, possible would be str(inspect.Signature().from_callable(self.pre_hook))
         #  maybe not relevant since should not influence the autotuner result
