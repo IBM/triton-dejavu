@@ -126,8 +126,8 @@ def _wait_fn_hash(fn):
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
     storage_tag = get_storage_tag()
-    fn_hash_l = get_string_hash(f"{fn_hash}")
-    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/code_version-{fn_hash_l}/tune_features-{key_hash}/kernel_configs-{configs_hash}/{storage_tag}"
+    fn_hash_256 = get_string_hash(f"{fn_hash}")
+    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/code_version-{fn_hash_256}/tune_features-{key_hash}/kernel_configs-{configs_hash}/{storage_tag}"
     return folder_tree_name
 
 
@@ -140,23 +140,17 @@ def get_config_list_hash(configs):
     for c in configs:
         s += f"{c}|"
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
 def get_list_hash(l):
     s = "|".join(l)
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
 def get_string_hash(s):
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
