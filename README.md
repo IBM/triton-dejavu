@@ -81,7 +81,7 @@ To determine if a previously stored cache is still applicable, we use the combin
 - pytorch version
 - triton version
 - GPU type
-- hash of the JIT function (i.e. `JITFunction.fn.hash`)
+- hash of the JIT function (i.e. `JITFunction.fn.hash`, but *without* the starting line number)
 - hash of the autotuner key list
 - hash of the configurations provided to the autotuner
 - hash of some autotuner optional parameter
