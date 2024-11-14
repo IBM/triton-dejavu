@@ -778,7 +778,7 @@ class Autotuner(KernelInterface):
             if self.metadata_key:
                 global_metadata_store[self.metadata_key] = (
                     f"<autotune:{self.best_config}>"
-                )
+                ).replace(" ", "")
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
