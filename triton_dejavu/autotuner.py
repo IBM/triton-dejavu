@@ -55,6 +55,7 @@ from triton_dejavu.dejavu_utilities import (
     get_type_dict,
 )
 from triton_dejavu.cache_manager import set_triton_cache_manager
+from triton_dejavu.utils import global_metadata_store
 
 if triton_major_version >= 3:
     from triton.compiler.errors import CompileTimeAssertionFailure
@@ -111,6 +112,7 @@ class Autotuner(KernelInterface):
         search_max_share=1.0,
         search_max_repeat=1,
         quantiles=None,
+        metadata_key=None,
     ):
         assert not (
             (informed_fallback is not None) and (fallback_heuristic is not None)
@@ -201,6 +203,7 @@ class Autotuner(KernelInterface):
         self.rep_t = rep
         # self.quantiles = (0.5, 0.2, 0.8)
         self.quantiles = quantiles
+        self.metadata_key = metadata_key
 
         self.fn = fn
         self.base_fn = fn
@@ -677,6 +680,7 @@ class Autotuner(KernelInterface):
                 **kwargs,
             )
         else:
+            # FIXME: this could assing the wrong argument to the wrong name if autotuner args are not last!
             self.nargs = dict(zip(self.arg_names, args))
             used_cached_result = True
             self.bench_time = 0.0
@@ -771,6 +775,10 @@ class Autotuner(KernelInterface):
                         f"{self.bench_time:.2f}s; best config selected: {self.best_config} with benchmark time {self._timings[key]}; "
                         f" evaluated {len(pruned_configs)} configurations;"
                     )
+            if self.metadata_key:
+                global_metadata_store[self.metadata_key] = (
+                    f"<autotune:{self.best_config}>"
+                )
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
@@ -847,6 +855,7 @@ def autotune(
     search_max_share=1.0,
     search_max_repeat=1,
     quantiles=None,
+    metadata_key=None,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -925,6 +934,9 @@ def autotune(
     :type search_max_repeat: int
     :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
                         Default is `None` which will lead to the median (0.5 quantile).
+    :param metadata_key: String to store the found configration as metadata in the triton_dejavu.utils.global_metadata_store.
+                         This could be used in combination with metadata_fn and proton.
+    :type metadata_key: str
     """
 
     def decorator(fn):
@@ -951,6 +963,7 @@ def autotune(
             search_max_share,
             search_max_repeat,
             quantiles,
+            metadata_key,
         )
 
     return decorator
