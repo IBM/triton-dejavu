@@ -358,14 +358,10 @@ class Autotuner(KernelInterface):
         self._start_time = time.time()
 
     def _get_param_hash(self):
-        hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph}"
+        hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} quantiles {self.quantiles}"
         # search params are not always managed by a tag, so per default we should hash them
         if os.getenv("TRITON_DEJAVU_HASH_SEARCH_PARAMS", "1") == "1":
             hs += f" use_bo {self.use_bo} use_random {self.use_random_search} max_search_n {self.search_max_n_trials} max_search_t {self.max_search_time_s}"
-        # hs = (
-        #     f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} use_bo {self.use_bo} "
-        #     f"bo_max_trials {self.search_max_n_trials} bo_timeout {self.max_search_time_s}"
-        # )
         # not relevant
         # hs += get_list_hash(self.reset_idx)
         # hs += get_list_hash(self.restore_idx)
