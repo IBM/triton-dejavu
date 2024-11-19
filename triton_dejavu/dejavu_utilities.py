@@ -116,10 +116,10 @@ def _get_rocm_version():
     except Exception as e:
         if flag_print_debug:
             print(f"[triton-dejavu] determining rocm version failed with: {e}")
-        cuda_version = os.environ.get("CONTAINER_ROCM_VERSION", "unknown")
-        if cuda_version == "unknown":
+        rocm_version = os.environ.get("CONTAINER_ROCM_VERSION", "unknown")
+        if rocm_version == "unknown":
             raise Exception(
-                "Can't determine cuda version and also CONTAINER_ROCM_VERSION is not set"
+                "Can't determine rocm version and also CONTAINER_ROCM_VERSION is not set"
             )
     os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"] = rocm_version
     return rocm_version
