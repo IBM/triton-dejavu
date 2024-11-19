@@ -152,17 +152,25 @@ def _get_dejavu_identifier():
     return dejavu_identifier
 
 
+def get_runtime_label():
+    if torch.version.hip:
+        return f"rocm_{_get_rocm_version()}"
+    return f"cuda_{_get_cuda_version()}"
+
+
+def get_gpu_label():
+    gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
+    return gpu_name
+
+
 def get_storage_identifier():
     # not an absolute path!
-    if torch.version.hip:
-        runtime_cuda_version = f"rocm_{_get_rocm_version()}"
-    else:
-        runtime_cuda_version = f"cuda_{_get_cuda_version()}"
-    gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
+    runtime_label = get_runtime_label()
+    gpu_name = get_gpu_label()
     triton_version = triton.__version__
     torch_version = torch.__version__
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{dejavu_identifier}/{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    storage_identifier = f"{dejavu_identifier}/{runtime_label}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
     return storage_identifier
 
 

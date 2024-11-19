@@ -47,4 +47,7 @@ def get_random_key(prefix=""):
     return x
 
 
-global_metadata_store = {"_initialized": f"{time.strftime('%Y-%m-%d %H:%M:%S')}", "_pid": f"{os.getpid()}"}
+global_metadata_store = {
+    "_initialized": f"{time.strftime('%Y-%m-%d %H:%M:%S')}",
+    "_pid": f"{os.getpid()}",
+}
