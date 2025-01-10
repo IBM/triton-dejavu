@@ -34,7 +34,8 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
-from triton_dejavu.dejavu_utilities import get_tmp_storage_path
+
+from .dejavu_utilities import create_dir_if_not_exist_recursive, get_tmp_storage_path
 
 # import signal
 # import ctypes
@@ -500,10 +501,13 @@ def do_bench(
         compiled_fn = fn.get_compiled_run()
         if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
             dir_name = os.path.dirname(__separate_process_dump_file__)
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, 0o0777)
+            create_dir_if_not_exist_recursive(dir_name)
             if not os.path.isfile(__separate_process_dump_file__):
                 open(__separate_process_dump_file__, "a").close()
+            try:
+                os.chmod(__separate_process_dump_file__, 0o0777)
+            except PermissionError as e:
+                print(f"can't set permission of file {__separate_process_dump_file__}: {e}")
         if use_cuda_graphs:
             p = mp.Process(
                 target=_do_bench_cudagraph,
@@ -573,9 +577,12 @@ def do_bench(
                 )
             else:
                 dir_name = os.path.dirname(tensor_path)
-                if not os.path.exists(dir_name):
-                    os.makedirs(dir_name, 0o0777)
+                create_dir_if_not_exist_recursive(dir_name)
                 np.save(tensor_path, target_tensor)
+                try:
+                    os.chmod(tensor_path, 0o0777)
+                except PermissionError as e:
+                    print(f"can't set permission of file {tensor_path}: {e}")
         # this is required to free all associated GPU memory if `fn.cleanup()` couldn't/wasn't executed at the GPU side
         # (close is not enough)
         p.terminate()

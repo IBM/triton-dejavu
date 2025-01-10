@@ -126,14 +126,34 @@ def _get_rocm_version():
     return rocm_version
 
 
+def create_dir_if_not_exist_recursive(path, mode=0o777):
+    # 0777 permissions to avoid problems with different users in containers and host system
+    norm_path = os.path.normpath(path)
+    paths_l = norm_path.split(os.sep)
+    path_walked = f"{os.sep}"
+    for p in paths_l:
+        if len(p) == 0:
+            continue
+        path_walked = os.path.join(path_walked, p)
+        create_dir_if_not_exist(path_walked, mode)
+
+
+def create_dir_if_not_exist(path, mode=0o777):
+    if not os.path.exists(path):
+        os.mkdir(path)
+        try:
+            os.chmod(path, mode)
+        except PermissionError as e:
+            print(f"can't set permission of directory {path}: {e}")
+
+
 def get_storage_prefix():
     storage_prefix = os.environ.get(__storage_env_var__, "none")
     if storage_prefix == "none":
         raise Exception(
             f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
         )
-    if not os.path.exists(storage_prefix):
-        os.makedirs(storage_prefix, 0o0777)
+    create_dir_if_not_exist_recursive(storage_prefix)
     return storage_prefix
 
 
@@ -177,10 +197,9 @@ def get_tmp_storage_path():
     storage_prefix = get_storage_prefix()
     storage_tag = get_storage_tag()
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{storage_prefix}/.{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
-    if not os.path.exists(storage_identifier):
-        os.makedirs(storage_identifier, 0o0777)
-    return storage_identifier
+    tmp_path = f"{storage_prefix}/.{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
+    create_dir_if_not_exist_recursive(tmp_path)
+    return tmp_path
 
 
 def get_triton_config_parameter_names():

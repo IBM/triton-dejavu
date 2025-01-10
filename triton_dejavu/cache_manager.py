@@ -24,6 +24,8 @@ from triton.runtime.cache import (
     default_override_dir,
 )
 
+from .dejavu_utilities import create_dir_if_not_exist_recursive
+
 
 def set_triton_cache_manager() -> None:
     """Set environment variable to tell Triton to use a
@@ -49,7 +51,7 @@ class CustomCacheManager(FileCacheManager):
             self.cache_dir = default_dump_dir()
             self.cache_dir = os.path.join(self.cache_dir, self.key)
             self.lock_path = os.path.join(self.cache_dir, "lock")
-            os.makedirs(self.cache_dir, exist_ok=True)
+            create_dir_if_not_exist_recursive(self.cache_dir)
         elif override:
             self.cache_dir = default_override_dir()
             self.cache_dir = os.path.join(self.cache_dir, self.key)
@@ -64,6 +66,6 @@ class CustomCacheManager(FileCacheManager):
                 # print(f"setting triton cache dir to {self.cache_dir}")
                 self.cache_dir = os.path.join(self.cache_dir, self.key)
                 self.lock_path = os.path.join(self.cache_dir, "lock")
-                os.makedirs(self.cache_dir, exist_ok=True)
+                create_dir_if_not_exist_recursive(self.cache_dir)
             else:
                 raise RuntimeError("Could not create or locate cache dir")

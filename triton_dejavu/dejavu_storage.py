@@ -28,6 +28,7 @@ from distutils.util import strtobool
 from triton_dejavu import __version__ as dejavu_version
 from .dejavu_utilities import (
     get_storage_identifier,
+    create_dir_if_not_exist_recursive,
     flag_print_debug,
     flag_print_debug_verbose,
     get_storage_prefix,
@@ -161,9 +162,7 @@ class DejavuStorage:
         self.default_storage_path = os.path.abspath(
             os.path.join(self.storage_prefix, self.storage_identifier)
         )
-        if not os.path.exists(self.default_storage_path):
-            # 0777 permissions to avoid problems with different users in containers and host system
-            os.makedirs(self.default_storage_path, 0o0777)
+        create_dir_if_not_exist_recursive(self.default_storage_path)
         self.fn_storage = {}
         self.measured_timings = {}
         self._known_files = []
@@ -174,16 +173,15 @@ class DejavuStorage:
         for folder_name in self.fn_storage:
             file_name = self._get_cache_file_path(folder_name)
             dir_name = os.path.dirname(file_name)
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, 0o0777)
+            create_dir_if_not_exist_recursive(dir_name)
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
             with open(file_name, "w") as f:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
             try:
-                os.chmod(dir_name, 0o0777)
+                os.chmod(file_name, 0o0777)
             except PermissionError as e:
-                print(f"can't set permission of directory {dir_name}: {e}")
+                print(f"can't set permission of cache file {file_name}: {e}")
 
     def add_cache_data_path_prefix(
         self, new_path, fn, configs_hash, key_hash, param_hash

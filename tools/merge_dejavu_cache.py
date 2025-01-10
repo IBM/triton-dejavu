@@ -36,6 +36,27 @@ def print_usage(argv0):
     )
 
 
+def create_dir_if_not_exist_recursive(path, mode=0o777):
+    # 0777 permissions to avoid problems with different users in containers and host system
+    norm_path = os.path.normpath(path)
+    paths_l = norm_path.split(os.sep)
+    path_walked = f"{os.sep}"
+    for p in paths_l:
+        if len(p) == 0:
+            continue
+        path_walked = os.path.join(path_walked, p)
+        create_dir_if_not_exist(path_walked, mode)
+
+
+def create_dir_if_not_exist(path, mode=0o777):
+    if not os.path.exists(path):
+        os.mkdir(path)
+        try:
+            os.chmod(path, mode)
+        except PermissionError as e:
+            print(f"can't set permission of directory {path}: {e}")
+
+
 def merge_cache_files(args):
     merge_soruce = args[:-1]
     merge_target = args[-1]
@@ -78,10 +99,13 @@ def merge_cache_files(args):
         target_cache["cache"].update(cache_json["cache"])
         target_cache["timings"].update(cache_json["timings"])
 
-    if not os.path.exists(target_dir):
-        os.makedirs(target_dir, 0o0777)
+    create_dir_if_not_exist_recursive(target_dir)
     with open(merge_target, "w") as f:
         json.dump(target_cache, f, indent=4)
+    try:
+        os.chmod(target_cache, 0o0777)
+    except PermissionError as e:
+        print(f"can't set permission of file {target_cache}: {e}")
     print(f"...done.")
     return 0
 
