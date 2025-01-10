@@ -164,13 +164,12 @@ def get_gpu_label():
 
 
 def get_storage_identifier():
-    # not an absolute path!
+    # not an absolute path! (also used as keys in dictionaries)
     runtime_label = get_runtime_label()
     gpu_name = get_gpu_label()
     triton_version = triton.__version__
-    torch_version = torch.__version__
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{dejavu_identifier}/{runtime_label}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    storage_identifier = f"{dejavu_identifier}/{runtime_label}/triton_{triton_version}/gpu_{gpu_name}"
     return storage_identifier
 
 
