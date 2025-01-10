@@ -189,7 +189,9 @@ def get_storage_identifier():
     gpu_name = get_gpu_label()
     triton_version = triton.__version__
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{dejavu_identifier}/triton_{triton_version}/{runtime_label}/gpu_{gpu_name}"
+    storage_identifier = (
+        f"{dejavu_identifier}/triton_{triton_version}/{runtime_label}/gpu_{gpu_name}"
+    )
     return storage_identifier
 
 

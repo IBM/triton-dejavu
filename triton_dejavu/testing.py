@@ -507,7 +507,9 @@ def do_bench(
             try:
                 os.chmod(__separate_process_dump_file__, 0o0777)
             except PermissionError as e:
-                print(f"can't set permission of file {__separate_process_dump_file__}: {e}")
+                print(
+                    f"can't set permission of file {__separate_process_dump_file__}: {e}"
+                )
         if use_cuda_graphs:
             p = mp.Process(
                 target=_do_bench_cudagraph,
