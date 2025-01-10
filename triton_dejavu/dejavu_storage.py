@@ -158,7 +158,9 @@ class DejavuStorage:
     def __init__(self) -> None:
         self.storage_prefix = get_storage_prefix()
         self.storage_identifier = get_storage_identifier()
-        self.default_storage_path = os.path.abspath(os.path.join(self.storage_prefix, self.storage_identifier))
+        self.default_storage_path = os.path.abspath(
+            os.path.join(self.storage_prefix, self.storage_identifier)
+        )
         if not os.path.exists(self.default_storage_path):
             # 0777 permissions to avoid problems with different users in containers and host system
             os.makedirs(self.default_storage_path, 0o0777)
@@ -183,7 +185,9 @@ class DejavuStorage:
             except PermissionError as e:
                 print(f"can't set permission of directory {dir_name}: {e}")
 
-    def add_cache_data_path_prefix(self, new_path, fn, configs_hash, key_hash, param_hash):
+    def add_cache_data_path_prefix(
+        self, new_path, fn, configs_hash, key_hash, param_hash
+    ):
         fn_hash = _wait_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
@@ -200,7 +204,9 @@ class DejavuStorage:
             print(
                 f"[triton-dejavu] Adding {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
             )
-        self.folder_name_to_storage_path[folder_name] = os.path.abspath(os.path.join(new_path, self.storage_identifier))
+        self.folder_name_to_storage_path[folder_name] = os.path.abspath(
+            os.path.join(new_path, self.storage_identifier)
+        )
 
     def _get_cache_file_prefix(self, folder_name):
         if folder_name in self.folder_name_to_storage_path:
@@ -210,11 +216,12 @@ class DejavuStorage:
                 )
             return self.folder_name_to_storage_path[folder_name]
         return self.default_storage_path
-    
-    def _get_cache_file_path(self, folder_name):
-        file_name = os.path.join(self._get_cache_file_prefix(folder_name), folder_name, 'cache.json')
-        return file_name
 
+    def _get_cache_file_path(self, folder_name):
+        file_name = os.path.join(
+            self._get_cache_file_prefix(folder_name), folder_name, "cache.json"
+        )
+        return file_name
 
     def add_autotuner_cache(
         self,

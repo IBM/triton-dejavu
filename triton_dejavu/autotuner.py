@@ -269,7 +269,13 @@ class Autotuner(KernelInterface):
             else None
         )
         if custom_data_storage:
-            global_dejavu_storage.add_cache_data_path_prefix(custom_data_storage, fn, self.configs_hash, self.key_hash, self._param_hash)
+            global_dejavu_storage.add_cache_data_path_prefix(
+                custom_data_storage,
+                fn,
+                self.configs_hash,
+                self.key_hash,
+                self._param_hash,
+            )
         self.cache = global_dejavu_storage.restore_autotuner_cache(
             fn,
             self.configs_hash,
