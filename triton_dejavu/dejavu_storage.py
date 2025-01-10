@@ -158,23 +158,22 @@ class DejavuStorage:
     def __init__(self) -> None:
         self.storage_prefix = get_storage_prefix()
         self.storage_identifier = get_storage_identifier()
-        self.storage_path = os.path.abspath(
-            f"{self.storage_prefix}/{self.storage_identifier}/"
-        )
-        if not os.path.exists(self.storage_path):
+        self.default_storage_path = os.path.abspath(os.path.join(self.storage_prefix, self.storage_identifier))
+        if not os.path.exists(self.default_storage_path):
             # 0777 permissions to avoid problems with different users in containers and host system
-            os.makedirs(self.storage_path, 0o0777)
+            os.makedirs(self.default_storage_path, 0o0777)
         self.fn_storage = {}
         self.measured_timings = {}
         self._known_files = []
         self.used_configs = {}
+        self.folder_name_to_storage_path = {}
 
     def __store__(self):
         for folder_name in self.fn_storage:
-            dir_name = f"{self.storage_path}/{folder_name}/"
+            file_name = self._get_cache_file_path(folder_name)
+            dir_name = os.path.dirname(file_name)
             if not os.path.exists(dir_name):
                 os.makedirs(dir_name, 0o0777)
-            file_name = f"{dir_name}/cache.json"
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
             with open(file_name, "w") as f:
@@ -183,6 +182,39 @@ class DejavuStorage:
                 os.chmod(dir_name, 0o0777)
             except PermissionError as e:
                 print(f"can't set permission of directory {dir_name}: {e}")
+
+    def add_cache_data_path_prefix(self, new_path, fn, configs_hash, key_hash, param_hash):
+        fn_hash = _wait_fn_hash(fn)
+        fn_name = str(fn).split(":")[1][:-1]
+        folder_name = _get_folder_name(
+            fn_name, fn_hash, configs_hash, key_hash, param_hash
+        )
+        self.add_cache_data_path_prefix_for_folder(new_path, folder_name)
+
+    def add_cache_data_path_prefix_for_folder(self, new_path, folder_name):
+        if folder_name in self.folder_name_to_storage_path:
+            raise Exception(
+                f"[triton-dejavu] There exist already a custom dejavu storage path for {folder_name} ({self.folder_name_to_storage_path[folder_name]}), can't over write it."
+            )
+        if flag_print_debug:
+            print(
+                f"[triton-dejavu] Adding {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
+            )
+        self.folder_name_to_storage_path[folder_name] = os.path.abspath(os.path.join(new_path, self.storage_identifier))
+
+    def _get_cache_file_prefix(self, folder_name):
+        if folder_name in self.folder_name_to_storage_path:
+            if flag_print_debug_verbose:
+                print(
+                    f"[triton-dejavu] Using {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
+                )
+            return self.folder_name_to_storage_path[folder_name]
+        return self.default_storage_path
+    
+    def _get_cache_file_path(self, folder_name):
+        file_name = os.path.join(self._get_cache_file_prefix(folder_name), folder_name, 'cache.json')
+        return file_name
+
 
     def add_autotuner_cache(
         self,
@@ -261,7 +293,7 @@ class DejavuStorage:
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
         )
-        cache_file = f"{self.storage_path}/{folder_name}/cache.json"
+        cache_file = self._get_cache_file_path(folder_name)
         if not os.path.isfile(cache_file):
             if flag_print_debug:
                 print(f"[triton-dejavu] No configurations found for {folder_name}.")

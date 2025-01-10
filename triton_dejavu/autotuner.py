@@ -113,6 +113,7 @@ class Autotuner(KernelInterface):
         search_max_repeat=1,
         quantiles=None,
         metadata_key=None,
+        custom_data_storage=None,
     ):
         assert not (
             (informed_fallback is not None) and (fallback_heuristic is not None)
@@ -267,6 +268,8 @@ class Autotuner(KernelInterface):
             if self.config_space is not None
             else None
         )
+        if custom_data_storage:
+            global_dejavu_storage.add_cache_data_path_prefix(custom_data_storage, fn, self.configs_hash, self.key_hash, self._param_hash)
         self.cache = global_dejavu_storage.restore_autotuner_cache(
             fn,
             self.configs_hash,
@@ -856,6 +859,7 @@ def autotune(
     search_max_repeat=1,
     quantiles=None,
     metadata_key=None,
+    custom_data_storage=None,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -937,6 +941,8 @@ def autotune(
     :param metadata_key: String to store the found configration as metadata in the triton_dejavu.utils.global_metadata_store.
                          This could be used in combination with metadata_fn and proton.
     :type metadata_key: str
+    :param custom_data_storage: Absolute path to a custom triton-dejavu data location for this function.
+    :type custom_data_storage: str
     """
 
     def decorator(fn):
@@ -964,6 +970,7 @@ def autotune(
             search_max_repeat,
             quantiles,
             metadata_key,
+            custom_data_storage,
         )
 
     return decorator
