@@ -198,13 +198,14 @@ class DejavuStorage:
             raise Exception(
                 f"[triton-dejavu] There exist already a custom dejavu storage path for {folder_name} ({self.folder_name_to_storage_path[folder_name]}), can't over write it."
             )
+        self.folder_name_to_storage_path[folder_name] = os.path.abspath(
+            os.path.join(new_path, self.storage_identifier)
+        )
         if flag_print_debug:
             print(
                 f"[triton-dejavu] Adding {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
             )
-        self.folder_name_to_storage_path[folder_name] = os.path.abspath(
-            os.path.join(new_path, self.storage_identifier)
-        )
+
 
     def _get_cache_file_prefix(self, folder_name):
         if folder_name in self.folder_name_to_storage_path:
