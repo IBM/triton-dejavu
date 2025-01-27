@@ -263,7 +263,6 @@ class Autotuner(KernelInterface):
                 warmup=self.warmup_t,
                 rep=self.rep_t,
                 quantiles=(0.5, 0.2, 0.8),
-                fast_flush=False,
             )
         except (
             OutOfResources,
