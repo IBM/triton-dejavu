@@ -41,6 +41,8 @@ flag_print_debug = os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1"
 flag_print_debug_verbose = os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1"
 if flag_print_debug_verbose:
     flag_print_debug = True
+if flag_print_debug:
+    flag_print_autotuning = True
 
 cuda_version = None
 rocm_version = None
