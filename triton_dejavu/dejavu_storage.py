@@ -34,6 +34,7 @@ from .dejavu_utilities import (
     get_storage_prefix,
     get_storage_tag,
 )
+from triton.runtime.jit import DependenciesFinder
 
 
 def _create_tuple(k):
@@ -106,23 +107,32 @@ def _create_config_args(v):
     return ret
 
 
-async def _get_fn_hash(fn: triton.JITFunction):
-    # trigger JIT
-    test = fn.cache_key
-    while fn.hash is None:
-        await asyncio.sleep(0.1)
-    starting_line_number = str(fn.starting_line_number)
-    corrected_fn_hash = fn.hash[: -(len(starting_line_number))]
-    # assert fn.hash == corrected_fn_hash + starting_line_number
-    return corrected_fn_hash
+# async def _get_fn_hash(fn: triton.JITFunction):
+#     # trigger JIT
+#     test = fn.cache_key
+#     from triton.runtime.jit import DependenciesFinder
+#
+#     while fn.hash is None:
+#         await asyncio.sleep(0.1)
+#     starting_line_number = str(fn.starting_line_number)
+#     corrected_fn_hash = fn.hash[: -(len(starting_line_number))]
+#     # assert fn.hash == corrected_fn_hash + starting_line_number
+#     return corrected_fn_hash
+#
+# def _wait_fn_hash(fn):
+#     # loop = asyncio.new_event_loop()
+#     # task = loop.create_task(_get_fn_hash(fn))
+#     # loop.run_until_complete(task)
+#     # fn_hash = task.result()
+#     fn_hash = _get_weak_fn_hash(fn)
+#     return fn_hash
 
 
-def _wait_fn_hash(fn):
-    loop = asyncio.new_event_loop()
-    task = loop.create_task(_get_fn_hash(fn))
-    loop.run_until_complete(task)
-    fn_hash = task.result()
-    return fn_hash
+def _get_weak_fn_hash(fn: triton.JITFunction):
+    # we are not a compiler, just an autotuner match, we don't need globals
+    dependencies_finder = DependenciesFinder(name=fn.__name__, globals={}, src=fn.src)
+    dependencies_finder.visit(fn.parse())
+    return dependencies_finder.ret
 
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
@@ -186,7 +196,7 @@ class DejavuStorage:
     def add_cache_data_path_prefix(
         self, new_path, fn, configs_hash, key_hash, param_hash
     ):
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
@@ -236,7 +246,7 @@ class DejavuStorage:
         use_cuda_graph,
         autotuner_keys,
     ):
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
@@ -293,7 +303,7 @@ class DejavuStorage:
         self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None
     ):
         # we need to consider dependencies as well, so we will wait for fn.hash
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
@@ -336,7 +346,7 @@ class DejavuStorage:
         return ret
 
     def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
