@@ -354,7 +354,7 @@ class Autotuner(KernelInterface):
             else:
                 self._fallback_call = self.fallback_heuristic
                 if flag_print_debug:
-                    print("[triton-dejavu] Using fallback heuristic function.")
+                    print("[triton-dejavu] Using un-informed fallback heuristic function.")
 
         self._use_isolated_process = (
             os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
