@@ -117,7 +117,7 @@ class Autotuner(KernelInterface):
     ):
         assert not (
             (informed_fallback is not None) and (fallback_heuristic is not None)
-        ), "either fallback_heuristic or infromed_fallback can be specified"
+        ), "either fallback_heuristic or informed_fallback can be specified"
         assert not (
             use_bo and use_random_search
         ), "either use_bo or use_random_search can be set"
@@ -335,7 +335,7 @@ class Autotuner(KernelInterface):
             )
         if informed_fallback is not None and len(self._cache_for_fallback) == 0:
             print(
-                "[triton-dejavu] WARNING: infromed_fallback and prepare_informed_fallback will be ignored because existing cache is empty."
+                "[triton-dejavu] WARNING: informed_fallback and prepare_informed_fallback will be ignored because existing cache is empty."
             )
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
         if self._use_fallback:
@@ -354,7 +354,9 @@ class Autotuner(KernelInterface):
             else:
                 self._fallback_call = self.fallback_heuristic
                 if flag_print_debug:
-                    print("[triton-dejavu] Using un-informed fallback heuristic function.")
+                    print(
+                        "[triton-dejavu] Using un-informed fallback heuristic function."
+                    )
 
         self._use_isolated_process = (
             os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1"
