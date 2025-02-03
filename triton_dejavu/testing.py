@@ -25,8 +25,6 @@ import numpy as np
 import torch
 
 # import torch.multiprocessing as mp
-# TODO: gate?
-# if os.environ.get("TRITON_DEJAVU_USE_ISOLATED_PROCESS", "0") == "1":
 import multiprocessing as mp
 import io
 from collections import namedtuple
@@ -35,29 +33,16 @@ from triton.runtime.driver import driver
 import gc
 import traceback
 
-from .dejavu_utilities import create_dir_if_not_exist_recursive, get_tmp_storage_path
-
-# import signal
-# import ctypes
-# from distutils import sysconfig
-
+from .dejavu_utilities import (
+    create_dir_if_not_exist_recursive,
+    get_tmp_storage_path,
+    flag_print_debug,
+    flag_print_debug_verbose,
+)
 
 __separate_process_dump_file__ = (
     f"{get_tmp_storage_path()}/isolated_bench/dejavu-mp-dump.log"
 )
-# __jit_timeout_s__ = int(os.environ.get('TRITON_DEJAVU_JIT_TIMEOUT', f"{60*10}"))  # default 10 min
-# if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-#     print(f"[triton-dejavu] JIT compile time out set to {__jit_timeout_s__}s.")
-
-# # __so_lib_name__ = 'sigalarm.so'
-# __so_lib_name__ = f"sigalarm{sysconfig.get_config_var('EXT_SUFFIX')}"
-# # we need to go up 2 levels...
-# __so_lib_path__ = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), __so_lib_name__)
-# _c_sigalarm_so_ = ctypes.CDLL(__so_lib_path__)
-#
-#
-# def handle_timeout(signum, frame):
-#     raise TimeoutError()
 
 
 class SerializeableCompiledKernel(triton.compiler.CompiledKernel):
@@ -148,8 +133,6 @@ class CompiledKernelRun:
         grid_0,
         grid_1,
         grid_2,
-        stream,
-        # pre_hook,
         kernel,
         launch_metadata,
         launch_enter_hook,
@@ -159,10 +142,7 @@ class CompiledKernelRun:
         self.grid_0 = grid_0
         self.grid_1 = grid_1
         self.grid_2 = grid_2
-        # self.stream = stream
-        # self.stream = torch.cuda.Stream()
-        self.stream = None  # can't be pickled?
-        # self.pre_hook = pre_hook
+        # streams etc. can't be pickled?
         self.kernel = SerializeableCompiledKernel(kernel)
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
@@ -172,8 +152,6 @@ class CompiledKernelRun:
     def __call__(self):
         device = driver.active.get_current_device()
         stream = driver.active.get_current_stream(device)
-        # if self.pre_hook:
-        #     self.pre_hook()
         return self.kernel.run(
             self.grid_0,
             self.grid_1,
@@ -215,42 +193,29 @@ class KernelEvalCall:
         self.call_lambda = call_lambda
         self.compiled_kernel = None
         self.cur_config = cur_config
-        # self._jit_timeout_s = __jit_timeout_s__
         self._jit_was_triggered = False
 
     def __call__(self):
-        # TODO: config pre hook, post hook
-        # return self.fn.run(*self.args, **self.current)
+        # pre_hook, post_hook must be part of call_lambda (see autotuner.py)
         if not self._jit_was_triggered:
             self._jit_was_triggered = True
 
-            def jit_with_timeout():
-                # FIXME
-                # signal.signal(signal.SIGALRM, handle_timeout)
-                # signal.alarm(self._jit_timeout_s)
-                # signal.signal(signal.SIGTRAP, handle_timeout)
-                # _c_sigalarm_so_.setAlarmHandler(ctypes.c_int(self._jit_timeout_s))
-                # try:
+            def jit_first_time():
                 compile_start = time.time()
                 ret = self.call_lambda()
                 compile_end = time.time()
                 compile_time = compile_end - compile_start
-                if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+                if flag_print_debug:
                     print(
                         f"[triton-dejavu] First execution including JIT compilation took {compile_time}s."
                     )
-                # except TimeoutError as e:
-                #     print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
-                #     ret = None
-                # finally:
-                #     signal.alarm(0)
                 return ret
 
-            return jit_with_timeout()
+            return jit_first_time()
         else:
             return self.call_lambda()
 
-    def _call_pre_hook(self):
+    def _call_config_pre_hook(self):
         # must be done before binding...so not separated...
         pre_hook = self.cur_config.pre_hook if self.cur_config.pre_hook else None
         if not pre_hook:
@@ -268,17 +233,11 @@ class KernelEvalCall:
         return self.benchmarking_stream
 
     def get_compiled_run(self) -> CompiledKernelRun:
-        # kernel = self.fn.run(*self.args, warmup=True, **self.current)
-        # need to call pre-hook first...
-        self._call_pre_hook()
+        # need to call config pre-hook first...
+        self._call_config_pre_hook()
 
         self.current["warmup"] = True
         compile_start = time.time()
-        # signal.signal(signal.SIGALRM, handle_timeout)
-        # signal.alarm(self._jit_timeout_s)
-        # signal.signal(signal.SIGTERM, handle_timeout)
-        # _c_sigalarm_so_.setAlarmHandler(ctypes.c_int(self._jit_timeout_s))
-        # try:
         kernel = self.fn.run(*self.args, **self.current)
         (
             bound_args,
@@ -287,10 +246,6 @@ class KernelEvalCall:
             non_constexpr_vals,
             excess_kwargs,
         ) = self.fn.binder(*self.args, **self.current)
-        # except TimeoutError as e:
-        #     print(f"[triton-dejavu] ERROR: JIT timed out with {e} (after {self._jit_timeout_s}s).")
-        # finally:
-        #     signal.alarm(0)
         compile_end = time.time()
         self._jit_was_triggered = True
 
@@ -316,7 +271,6 @@ class KernelEvalCall:
             grid_0,
             grid_1,
             grid_2,
-            self.benchmarking_stream,
             kernel,
             launch_metadata,
             self.fn.CompiledKernel.launch_enter_hook,
@@ -327,7 +281,7 @@ class KernelEvalCall:
         compile_time = compile_end - compile_start
         wrapper_time = wrapper_end - compile_end
 
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             print(
                 f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s."
             )
@@ -354,11 +308,13 @@ def _do_bench_cudagraph(
     return_mode="mean",
     redirect_io=False,
 ):
+    """
+    Similar to upstream, but we use an internal fork that has the same interface in the case of using cuda graphs or not.
+    Also, it supports being lunched in a separate process
+    """
     if redirect_io:
         # redirect below python level
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            # os.dup2(os.open(os.devnull, os.O_RDWR), 1)
-            # os.dup2(os.open(os.devnull, os.O_RDWR), 2)
+        if flag_print_debug:
             os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 1)
             os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 2)
         sys.stdout = io.StringIO()
@@ -366,6 +322,12 @@ def _do_bench_cudagraph(
     try:
         # print("starting _do_bench_cudagraph...\n")
         assert return_mode in ["min", "max", "mean", "median"]
+        
+        # TODO: use device, stream, and device interface once API settled in Triton
+        #  (and we don't need trtion < 3.2 any more)
+        # device = driver.active.get_current_device()
+        # stream = driver.active.get_current_stream(device)
+        # di = driver.active.get_device_interface()
 
         with torch.cuda.stream(fn.get_stream()):
             if torch.cuda.current_stream() == torch.cuda.default_stream():
@@ -466,8 +428,7 @@ def do_bench(
     :type return_mode: str
     """
     if not use_isolated_process:
-        # FIXME
-        # equivalent to trtion upstream
+        # (more or less) equivalent to trtion upstream
         return_dict = {"ret": float("nan")}
         if use_cuda_graphs:
             _do_bench_cudagraph(
@@ -492,14 +453,11 @@ def do_bench(
         print(
             f"current memory: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. "
         )
-        # TODO make once? reduce overhead...
         mp.set_start_method("spawn", force=True)
         manager = mp.Manager()
         return_dict = manager.dict({"ret": float("nan"), "stdout": "", "stderr": ""})
-        # from torch.multiprocessing.spawn import spawn
-        # mp.spawn(_do_bench_cudagraph, args=(fn, return_dict, rep, grad_to_none, return_mode, True), nprocs=1, join=True, start_method='spawn')
         compiled_fn = fn.get_compiled_run()
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
+        if flag_print_debug:
             dir_name = os.path.dirname(__separate_process_dump_file__)
             create_dir_if_not_exist_recursive(dir_name)
             if not os.path.isfile(__separate_process_dump_file__):
@@ -544,10 +502,7 @@ def do_bench(
         print(
             f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] separated process returned with {ret} [run {run_id:06d}] (stdout: {return_dict['stdout']})"
         )
-        # if len(return_dict['stderr']) > 0 and os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-        if (np.isnan(ret) or "e" in return_dict) and os.environ.get(
-            "TRITON_DEJAVU_DEBUG", "0"
-        ) == "1":
+        if (np.isnan(ret) or "e" in return_dict) and flag_print_debug:
             e = return_dict.get("e", "(unknown)")
             print(
                 f"[triton-dejavu] [{time.strftime('%Y-%m-%d %H:%M:%S')}] benchmark process failed with: {e}; {return_dict['stderr']}"
@@ -609,35 +564,26 @@ def _do_bench_cuda_eager(
     redirect_io=False,
 ):
     """
-    Benchmark the runtime of the provided function. By default, return the median runtime of :code:`fn` along with
-    the 20-th and 80-th performance percentile.
-
-    :param fn: Function to benchmark
-    :type fn: Callable
-    :param warmup: Warmup time (in ms)
-    :type warmup: int
-    :param rep: Repetition time (in ms)
-    :type rep: int
-    :param grad_to_none: Reset the gradient of the provided tensor to None
-    :type grad_to_none: torch.tensor, optional
-    :param quantiles: Performance percentile to return in addition to the median.
-    :type quantiles: list[float]
-    :param fast_flush: Use faster kernel to flush L2 between measurements
-    :type fast_flush: bool
+    Similar to upstream, but we use an internal fork that has the same interface in the case of using cuda graphs or not.
+    Also, it supports being lunched in a separate process
     """
     assert return_mode in ["min", "max", "mean", "median"]
     import torch
 
     if redirect_io:
         # redirect below python level
-        if os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1":
-            # os.dup2(os.open(os.devnull, os.O_RDWR), 1)
-            # os.dup2(os.open(os.devnull, os.O_RDWR), 2)
+        if flag_print_debug:
             os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 1)
             os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 2)
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
     try:
+        
+        # TODO: use device, stream, and device interface once API settled in Triton
+        #  (and we don't need trtion < 3.2 any more)
+        # device = driver.active.get_current_device()
+        # stream = driver.active.get_current_stream(device)
+        # di = driver.active.get_device_interface()
 
         fn()
         torch.cuda.synchronize()
