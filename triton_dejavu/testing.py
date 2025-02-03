@@ -142,7 +142,7 @@ class CompiledKernelRun:
         self.grid_0 = grid_0
         self.grid_1 = grid_1
         self.grid_2 = grid_2
-        # streams etc. can't be pickled?
+        # streams etc. can't be pickled
         self.kernel = SerializeableCompiledKernel(kernel)
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
@@ -300,11 +300,12 @@ class KernelEvalCall:
 
 
 def _do_bench_cudagraph(
-    fn,
+    fn: KernelEvalCall,
     return_dict,
     rep=20,
     grad_to_none=None,
     quantiles=None,
+    fast_flush=True,
     return_mode="mean",
     redirect_io=False,
 ):
@@ -322,7 +323,7 @@ def _do_bench_cudagraph(
     try:
         # print("starting _do_bench_cudagraph...\n")
         assert return_mode in ["min", "max", "mean", "median"]
-        
+
         # TODO: use device, stream, and device interface once API settled in Triton
         #  (and we don't need trtion < 3.2 any more)
         # device = driver.active.get_current_device()
@@ -334,8 +335,19 @@ def _do_bench_cudagraph(
                 raise RuntimeError(
                     "Cannot capture graph in default stream. Please use side stream in benchmark code."
                 )
+
             # warmup & JIT if not separated process
             fn()
+
+            # We maintain a buffer of 256 MB that we clear
+            # before each kernel call to make sure that the L2
+            # doesn't contain any input data before the run
+            # TODO: use driver.active... in the future
+            if fast_flush:
+                cache = torch.empty(int(256e6 // 4), dtype=torch.int, device="cuda")
+            else:
+                cache = torch.empty(int(256e6), dtype=torch.int8, device="cuda")
+
             # step 1 - we estimate the amount of time the kernel call takes
             # NOTE: this estimate isn't super accurate because the GPU isn't warmed up at this point
             #       but it is probably good enough
@@ -357,7 +369,7 @@ def _do_bench_cudagraph(
             estimate_ms = start_event.elapsed_time(end_event)
             n_repeat = max(1, int(rep / estimate_ms))
             # step 2 - construct a cuda graph with `n_repeat` unrolled function calls to minimize
-            # host overhead
+            #  host overhead
             g = torch.cuda.CUDAGraph()
             with torch.cuda.graph(g):
                 for _ in range(n_repeat):
@@ -369,6 +381,8 @@ def _do_bench_cudagraph(
             # measure time and return
             ret = []
             n_retries = 10
+            # NOTE: in contrast do upstream, we do clear L2 Cache
+            #  However, also we can't do it within a cuda graph, where the kernel is launched n_repeat times
             for _ in range(n_retries):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
@@ -377,6 +391,7 @@ def _do_bench_cudagraph(
                 end_event.record()
                 torch.cuda.synchronize()
                 ret += [start_event.elapsed_time(end_event) / n_repeat]
+                cache.zero_()
             times = torch.tensor(ret)
             # return getattr(torch, return_mode)(times).item()
             if quantiles is not None:
@@ -402,8 +417,115 @@ def _do_bench_cudagraph(
         return_dict["stderr"] = sys.stdout.getvalue()
 
 
+def _do_bench_cuda_eager(
+    fn: KernelEvalCall,
+    return_dict,
+    warmup=25,
+    rep=100,
+    grad_to_none=None,
+    quantiles=None,
+    fast_flush=True,
+    return_mode="mean",
+    redirect_io=False,
+):
+    """
+    Similar to upstream, but we use an internal fork that has the same interface in the case of using cuda graphs or not.
+    Also, it supports being lunched in a separate process
+    """
+    assert return_mode in ["min", "max", "mean", "median"]
+    import torch
+
+    if redirect_io:
+        # redirect below python level
+        if flag_print_debug:
+            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 1)
+            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 2)
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+    try:
+
+        # TODO: use device, stream, and device interface once API settled in Triton
+        #  (and we don't need trtion < 3.2 any more)
+        # device = driver.active.get_current_device()
+        # stream = driver.active.get_current_stream(device)
+        # di = driver.active.get_device_interface()
+
+        fn()
+        torch.cuda.synchronize()
+
+        # We maintain a buffer of 256 MB that we clear
+        # before each kernel call to make sure that the L2
+        # doesn't contain any input data before the run
+        # TODO: use driver.active... in the future
+        if fast_flush:
+            cache = torch.empty(int(256e6 // 4), dtype=torch.int, device="cuda")
+        else:
+            cache = torch.empty(int(256e6), dtype=torch.int8, device="cuda")
+
+        # Estimate the runtime of the function
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
+        for _ in range(5):
+            cache.zero_()
+            fn()
+        end_event.record()
+        torch.cuda.synchronize()
+        estimate_ms = start_event.elapsed_time(end_event) / 5
+
+        # compute number of warmup and repeat
+        n_warmup = max(1, int(warmup / estimate_ms))
+        n_repeat = max(1, int(rep / estimate_ms))
+        start_event = [torch.cuda.Event(enable_timing=True) for i in range(n_repeat)]
+        end_event = [torch.cuda.Event(enable_timing=True) for i in range(n_repeat)]
+        # Warm-up
+        for _ in range(n_warmup):
+            fn()
+        # Benchmark
+        for i in range(n_repeat):
+            # we don't want `fn` to accumulate gradient values
+            # if it contains a backward pass. So we clear the
+            # provided gradients
+            if grad_to_none is not None:
+                for x in grad_to_none:
+                    x.grad = None
+            # we clear the L2 cache before each run
+            cache.zero_()
+            # record time of `fn`
+            start_event[i].record()
+            fn()
+            end_event[i].record()
+        # Record clocks
+        torch.cuda.synchronize()
+        times = torch.tensor(
+            [s.elapsed_time(e) for s, e in zip(start_event, end_event)],
+            dtype=torch.float,
+        )
+        if quantiles is not None:
+            ret = torch.quantile(
+                times, torch.tensor(quantiles, dtype=torch.float)
+            ).tolist()
+            if len(ret) == 1:
+                ret = ret[0]
+        else:
+            ret = getattr(torch, return_mode)(times).item()
+        return_dict["ret"] = ret
+    except Exception as e:
+        print(f"bench_cuda_eager failed with {e}")
+        # return_dict["e"] = e
+        tb = traceback.format_exc()
+        return_dict["e"] = f"Exception {e}; traceback: {tb}"
+        print(tb)
+    fn.cleanup()
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
+    if redirect_io:
+        return_dict["stdout"] = sys.stdout.getvalue()
+        return_dict["stderr"] = sys.stdout.getvalue()
+
+
 def do_bench(
-    fn,
+    fn: KernelEvalCall,
     use_cuda_graphs=True,
     warmup=25,
     rep=20,
@@ -432,7 +554,7 @@ def do_bench(
         return_dict = {"ret": float("nan")}
         if use_cuda_graphs:
             _do_bench_cudagraph(
-                fn, return_dict, rep, grad_to_none, quantiles, return_mode
+                fn, return_dict, rep, grad_to_none, quantiles, False, return_mode
             )
         else:
             _do_bench_cuda_eager(
@@ -477,6 +599,7 @@ def do_bench(
                     rep,
                     grad_to_none,
                     quantiles,
+                    False,
                     return_mode,
                     True,
                 ),
@@ -550,109 +673,3 @@ def do_bench(
         del fn
         gc.collect()
         return ret
-
-
-def _do_bench_cuda_eager(
-    fn,
-    return_dict,
-    warmup=25,
-    rep=100,
-    grad_to_none=None,
-    quantiles=None,
-    fast_flush=True,
-    return_mode="mean",
-    redirect_io=False,
-):
-    """
-    Similar to upstream, but we use an internal fork that has the same interface in the case of using cuda graphs or not.
-    Also, it supports being lunched in a separate process
-    """
-    assert return_mode in ["min", "max", "mean", "median"]
-    import torch
-
-    if redirect_io:
-        # redirect below python level
-        if flag_print_debug:
-            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 1)
-            os.dup2(os.open(__separate_process_dump_file__, os.O_APPEND), 2)
-        sys.stdout = io.StringIO()
-        sys.stderr = io.StringIO()
-    try:
-        
-        # TODO: use device, stream, and device interface once API settled in Triton
-        #  (and we don't need trtion < 3.2 any more)
-        # device = driver.active.get_current_device()
-        # stream = driver.active.get_current_stream(device)
-        # di = driver.active.get_device_interface()
-
-        fn()
-        torch.cuda.synchronize()
-
-        # We maintain a buffer of 256 MB that we clear
-        # before each kernel call to make sure that the L2
-        # doesn't contain any input data before the run
-        if fast_flush:
-            cache = torch.empty(int(256e6 // 4), dtype=torch.int, device="cuda")
-        else:
-            cache = torch.empty(int(256e6), dtype=torch.int8, device="cuda")
-
-        # Estimate the runtime of the function
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
-        start_event.record()
-        for _ in range(5):
-            cache.zero_()
-            fn()
-        end_event.record()
-        torch.cuda.synchronize()
-        estimate_ms = start_event.elapsed_time(end_event) / 5
-
-        # compute number of warmup and repeat
-        n_warmup = max(1, int(warmup / estimate_ms))
-        n_repeat = max(1, int(rep / estimate_ms))
-        start_event = [torch.cuda.Event(enable_timing=True) for i in range(n_repeat)]
-        end_event = [torch.cuda.Event(enable_timing=True) for i in range(n_repeat)]
-        # Warm-up
-        for _ in range(n_warmup):
-            fn()
-        # Benchmark
-        for i in range(n_repeat):
-            # we don't want `fn` to accumulate gradient values
-            # if it contains a backward pass. So we clear the
-            # provided gradients
-            if grad_to_none is not None:
-                for x in grad_to_none:
-                    x.grad = None
-            # we clear the L2 cache before each run
-            cache.zero_()
-            # record time of `fn`
-            start_event[i].record()
-            fn()
-            end_event[i].record()
-        # Record clocks
-        torch.cuda.synchronize()
-        times = torch.tensor(
-            [s.elapsed_time(e) for s, e in zip(start_event, end_event)],
-            dtype=torch.float,
-        )
-        if quantiles is not None:
-            ret = torch.quantile(
-                times, torch.tensor(quantiles, dtype=torch.float)
-            ).tolist()
-            if len(ret) == 1:
-                ret = ret[0]
-        else:
-            ret = getattr(torch, return_mode)(times).item()
-        return_dict["ret"] = ret
-    except Exception as e:
-        print(f"bench_cuda_eager failed with {e}")
-        # return_dict["e"] = e
-        tb = traceback.format_exc()
-        return_dict["e"] = f"Exception {e}; traceback: {tb}"
-        print(tb)
-    fn.cleanup()
-    torch.cuda.empty_cache()
-    torch.cuda.ipc_collect()
-    if redirect_io:
-        return_dict["stdout"] = sys.stdout.getvalue()
-        return_dict["stderr"] = sys.stdout.getvalue()
