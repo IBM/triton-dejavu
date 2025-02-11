@@ -239,6 +239,7 @@ class KernelEvalCall:
         self.current["warmup"] = True
         compile_start = time.time()
         kernel = self.fn.run(*self.args, **self.current)
+        compile_end = time.time()
         (
             bound_args,
             sig_and_spec,
@@ -246,7 +247,7 @@ class KernelEvalCall:
             non_constexpr_vals,
             excess_kwargs,
         ) = self.fn.binder(*self.args, **self.current)
-        compile_end = time.time()
+        bind_end = time.time()
         self._jit_was_triggered = True
 
         # device = triton.runtime.driver.active.get_current_device()
@@ -279,11 +280,12 @@ class KernelEvalCall:
         )
         wrapper_end = time.time()
         compile_time = compile_end - compile_start
-        wrapper_time = wrapper_end - compile_end
+        bind_time = bind_end - compile_end
+        wrapper_time = wrapper_end - bind_end
 
         if flag_print_debug:
             print(
-                f"[triton-dejavu] JIT compilation took {compile_time}s, wrapper {wrapper_time}s."
+                f"[triton-dejavu] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
             )
 
         return self.compiled_kernel
