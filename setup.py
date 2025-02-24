@@ -1,5 +1,5 @@
 #  /*******************************************************************************
-#   * Copyright 2024 IBM Corporation
+#   * Copyright 2024 -- 2025 IBM Corporation
 #   *
 #   * Licensed under the Apache License, Version 2.0 (the "License");
 #   * you may not use this file except in compliance with the License.
@@ -44,11 +44,6 @@ def find_version(filepath: str) -> str:
         raise RuntimeError("Unable to find version string.")
 
 
-# c_module = Extension('sigalarm',
-#                      sources= ['triton_dejavu/sigalarm.c'],
-#                      extra_compile_args=['-shared','-fPIC'])
-
-
 setup(
     name="triton_dejavu",
     version=find_version(os.path.join(PROJECT_ROOT, "triton_dejavu/__init__.py")),
@@ -61,5 +56,4 @@ setup(
     packages=["triton_dejavu"],
     # package_dir={'': 'triton_dejavu'},
     include_package_data=True,
-    # ext_modules=[c_module],
 )
