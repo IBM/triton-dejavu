@@ -79,12 +79,9 @@ def _get_cuda_version():
         cuda_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
-            print(f"[triton-dejavu] determining cuda version failed with: {e}")
-        cuda_version = os.environ.get("CONTAINER_CUDA_VERSION", "unknown")
-        if cuda_version == "unknown":
-            raise Exception(
-                "Can't determine cuda version and also CONTAINER_CUDA_VERSION is not set"
-            )
+            print(f"[triton-dejavu] determining cuda version failed with: {e}" \
+                  f"using torch.version.hip as fallback")
+        cuda_version = f"torch_{torch.version.cuda}"
     os.environ["_TRITON_DEJAVU_DETERMINED_CUDA_VERSION"] = cuda_version
     return cuda_version
 
@@ -118,12 +115,9 @@ def _get_rocm_version():
         rocm_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
-            print(f"[triton-dejavu] determining rocm version failed with: {e}")
-        rocm_version = os.environ.get("CONTAINER_ROCM_VERSION", "unknown")
-        if rocm_version == "unknown":
-            raise Exception(
-                "Can't determine rocm version and also CONTAINER_ROCM_VERSION is not set"
-            )
+            print(f"[triton-dejavu] determining rocm version failed with: {e}\n" \
+                  f"using torch.version.hip as fallback")
+        rocm_version = f"torch_{torch.version.hip}"
     os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"] = rocm_version
     return rocm_version
 
