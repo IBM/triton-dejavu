@@ -79,8 +79,10 @@ def _get_cuda_version():
         cuda_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
-            print(f"[triton-dejavu] determining cuda version failed with: {e}" \
-                  f"using torch.version.hip as fallback")
+            print(
+                f"[triton-dejavu] determining cuda version failed with: {e}\n"
+                f"using torch.version.cuda as fallback"
+            )
         cuda_version = f"torch_{torch.version.cuda}"
     os.environ["_TRITON_DEJAVU_DETERMINED_CUDA_VERSION"] = cuda_version
     return cuda_version
@@ -115,8 +117,10 @@ def _get_rocm_version():
         rocm_version = version.group(1)
     except Exception as e:
         if flag_print_debug:
-            print(f"[triton-dejavu] determining rocm version failed with: {e}\n" \
-                  f"using torch.version.hip as fallback")
+            print(
+                f"[triton-dejavu] determining rocm version failed with: {e}\n"
+                f"using torch.version.hip as fallback"
+            )
         rocm_version = f"torch_{torch.version.hip}"
     os.environ["_TRITON_DEJAVU_DETERMINED_ROCM_VERSION"] = rocm_version
     return rocm_version
@@ -146,8 +150,15 @@ def create_dir_if_not_exist(path, mode=0o777):
 def get_storage_prefix():
     storage_prefix = os.environ.get(__storage_env_var__, "none")
     if storage_prefix == "none":
+        storage_prefix = os.getcwd()
+        print(
+            f"[triton-dejavu] WARNING: The environment variable {__storage_env_var__} is not set! "
+            f"Using {storage_prefix} (os.getcwd()) as fallback for triton-dejavu storage."
+        )
+    if not os.access(storage_prefix, os.W_OK):
         raise Exception(
-            f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
+            f"[triton-dejavu] The path {storage_prefix} is not writeable and can not be used "
+            f"as cache storage. Consider another location using the {__storage_env_var__} environment variable."
         )
     create_dir_if_not_exist_recursive(storage_prefix)
     return storage_prefix

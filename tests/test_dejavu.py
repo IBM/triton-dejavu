@@ -404,7 +404,7 @@ if __name__ == "__main__":
             print(
                 f"\nPerformance results of test {test} (only tests without numerical error and with valid shapes, etc.):"
             )
-            if os.environ.get("WATSONX_SAVE_CSV", "0") == "1":
+            if os.environ.get("TRITON_DEJAVU_DEBUG_SAVE_CSV", "0") == "1":
                 filename = "perf_test.csv"
                 df.to_csv(filename, sep="\t", encoding="utf-8")
                 print(f"(stored in {filename})")
