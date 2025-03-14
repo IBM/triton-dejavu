@@ -177,12 +177,12 @@ If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message abou
 
 ### Bayesian Optimization to speed up autotune process
 
-Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. For this, triton-dejavu dpeends on the  [SMAC library](https://github.com/automl/SMAC3), see `requirements-opt.txt`. 
-Triton-dejavu also implented random search, since BO does not always convert quicker. 
+Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. For this, triton-dejavu depends on the [SMAC library](https://github.com/automl/SMAC3), see `requirements-opt.txt`. 
+Triton-dejavu also implemented random search, since BO does not always convert quicker. 
 
 Both features can be enabled with additional parameters to `triton_dejavu.autotune()`:
-- `use_bo`: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
-- `use_random_search`: Activate Random Searchs to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). This feature can be used in combination with config_space and config lists. However, prune_configs_by must not be provided.
+- `use_bo`: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the chosen kernel). This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
+- `use_random_search`: Activate Random Search to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the chosen kernel). This feature can be used in combination with config_space and config lists. However, prune_configs_by must not be provided.
 - `search_max_search_t`: Maximum search time (in seconds) for BO and Random Search.
 - `search_max_share`: Maximum percentage of the total config space BO and Random Search can search through. This translates into a maximum trial number for the optimizer.
 
@@ -204,5 +204,6 @@ Triton-dejavu can be configured with the following environment variables:
 - `TRITON_DEJAVU_DEBUG = 1`: Prints debug messages.
 - `TRITON_DEJAVU_DEBUG_DEBUG = 1`: Prints more debug messages (This will be replaced with logger levels in the future). 
 - `TRITON_DEJAVU_USE_ONLY_RESTORED = 1`: Forces the autotuner to just re-evaluate the configurations that were part of the restored autotuner cache in case a new autotuner run (for a new `key`-tuple) is triggered. This could speed up autotuner evaluations by just considering already tried-and-tested configurations out of a bigger configuration space. 
-- `TRITON_DEJAVU_USE_ISOLATED_PROCESS = 1`: Runs the benchmark function of a kernel in a separate process. This allows the autotuner to survive crashes of one kernel version during autotuning, e.g. if an illegal memory access happens due to an invalid configuration. 
-- `_TRITON_DEJAVU_DETERMINED_ROCM_VERSION` and `_TRITON_DEJAVU_DETERMINED_CUDA_VERSION`: These environment variables overwrite the automatic detection of the cuda or rocm by triton-dejavu. It is not recommended to use them besides exceptional scenarios where it is impossible for triton-dejavu to determine the used versions. 
+- `TRITON_DEJAVU_USE_ISOLATED_PROCESS = 1`: Runs the benchmark function of a kernel in a separate process. This allows the autotuner to survive crashes of one kernel version during autotuning, e.g. if an illegal memory access happens due to an invalid kernel configuration.
+- `_TRITON_DEJAVU_DETERMINED_ROCM_VERSION` and `_TRITON_DEJAVU_DETERMINED_CUDA_VERSION`: These environment variables overwrite the automatic detection of the cuda or rocm by triton-dejavu. It is not recommended to use them besides exceptional scenarios where it is impossible for triton-dejavu to determine the used versions.
+
