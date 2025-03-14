@@ -39,8 +39,6 @@ To use the `ConfigSpaces` feature, replace the `config` parameter for the triton
         {'BLOCK_N_SIZE': [1024, 2048, 4096]},
         num_warps=[4, 8, 16],
         num_stages=[1, 2, 4, 6],
-        num_ctas=[1],
-        enable_warp_specialization=[False, True]
     ),
 ```
 
@@ -60,7 +58,16 @@ chmod o+rw dejavu-data/
 docker run --rm -it --gpus '"device=0"' -v $(pwd)/dejavu-data/:/storage/dejavu-data/ test-triton-dejavu:latest
 ```
 
-You can add e.g. `--build-arg triton_version=release/2.3.x` to the docker build command if you want to test not the latest `main` of triton.
+You can add e.g. `--build-arg triton_version=release/3.2.x` to the docker build command if you want to test not the latest `release` of triton.
+
+Versions
+---------------
+
+Triton-dejavu roughly follows [Semantic Versioning](https://semver.org), with stable "releases" tagged. Please see [git tags](https://github.com/IBM/triton-dejavu/tags) for a list of older versions. 
+
+
+However, due to the experimental nature of this repository, internal API compatibility is not always ensured for major _or_ minor version changes. This means that triton-dejavu _can not reuse cache files_ (and cache file structures) that were created with another minor version (i.e. `0.7.X` can't use caches created with `0.5.X`). 
+
 
 Features
 ----------------
@@ -78,14 +85,13 @@ Our triton-dejavu autotuner is based on the [upstream autotuner](https://github.
 To determine if a previously stored cache is still applicable, we use the combination of multiple values:
 
 - cuda runtime version (i.e. the ptxas used by triton) / rocm runtime version (i.e. the rocm ldd used by triton)
-- pytorch version
 - triton version
 - GPU type
-- hash of the JIT function (i.e. `JITFunction.fn.hash`, but *without* the starting line number)
+- hash of the JIT function (i.e. `JITFunction.fn.hash`, but *without* the starting line number or global dependencies)
 - hash of the autotuner key list
 - hash of the configurations provided to the autotuner
 - hash of some autotuner optional parameter
-- (minor version of triton-dejavu)
+- (_major.minor version_ of triton-dejavu)
 
 So far, we think that the above listed combination determines the applicability of a cache unambiguous. Hence, if all these values match a stored cache, this cache is restored and reused.
 
@@ -99,8 +105,9 @@ Please note, the above list does not include features that do not influence the 
 Below is a simple example of how such a stored cache looks like (the “some_function” in the identifier is just there to help us humans analyzing what’s in the cache):
 
 ```
-DejavuStorage identifier: dejavu_0.5/cuda_12.4/torch_2.4.0+cu121/triton_3.0.0/gpu_NVIDIA_A100_80GB_PCIe 
-Cache identifier: some_function/autotune_config-9cefb332ef1d4228aeabeeb71300a10e49af618945049a462862f7ebcba76770/kernel_configs-55a194aa00a30b006356930f070398dd06fd7e3442e00591250f93f7fdb3e9de/code_version-476f4fd1e55ef79ed14f270b5f9e7b6c5b4b0c0dbdc462ca3c98669dbb80a1b6/default
+DejavuStorage identifier: dejavu_0.7/triton_3.2.0/cuda_12.4/gpu_NVIDIA_A100_80GB_PCIe 
+Cache identifier: some_function/autotune_config-9cefb332ef1d4228aeabeeb71300a10e49af618945049a462862f7ebcba76770/code_version-476f4fd1e55ef79ed14f270b5f9e7b6c5b4b0c0dbdc462ca3c98669dbb80a1b6/tune_features-df62f53ce178f143b59631de953c946e43811ff1b34cd71e422dfdf14ac35bb9/kernel_configs-55a194aa00a30b006356930f070398dd06fd7e3442e00591250f93f7fdb3e9de/default
+
 
 Stored cache: 
 {
@@ -145,7 +152,6 @@ During generation of the list, configuration options that are only available on 
         num_warps=[2, 4, 8],
         num_stages=[2, 4, 8],
         num_ctas=[1],  
-        enable_warp_specialization=[False, True],  # for triton < 3.0
     ),
 ```
 
@@ -169,6 +175,18 @@ The heuristic callable is then called with the current `key`-tuple as argument.
 If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message about the use and outcome of the heuristic is printed. 
 
 
+### Bayesian Optimization to speed up autotune process
+
+Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. For this, triton-dejavu dpeends on the  [SMAC library](https://github.com/automl/SMAC3), see `requirements-opt.txt`. 
+Triton-dejavu also implented random search, since BO does not always convert quicker. 
+
+Both features can be enabled with additional parameters to `triton_dejavu.autotune()`:
+- `use_bo`: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
+- `use_random_search`: Activate Random Searchs to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel). This feature can be used in combination with config_space and config lists. However, prune_configs_by must not be provided.
+- `search_max_search_t`: Maximum search time (in seconds) for BO and Random Search.
+- `search_max_share`: Maximum percentage of the total config space BO and Random Search can search through. This translates into a maximum trial number for the optimizer.
+
+
 Compatibility
 ------------------
 
@@ -180,11 +198,11 @@ Environment variables
 
 Triton-dejavu can be configured with the following environment variables:
 
-- `TRITON_DEJAVU_STORAGE = <some-path>`: The path to the triton-dejavu storage folder (this environment variable *must be set*!). 
+- `TRITON_DEJAVU_STORAGE = <some-path>`: The path to the triton-dejavu storage folder. **It is strongly recommended to set this environment variable**, otherwise `os.getcwd()` will be used. If the cache is stored differently for individual kernels, the `custom_data_storage` parameter for `triton_dejavu.autotuner` could be used.
 - `TRITON_PRINT_AUTOTUNING`: Logs the result of the autotune process (as upstream triton).
 - `TRITON_DEJAVU_FORCE_FALLBACK = 1`: See [fallback heuristic](#fallback-heuristic).
 - `TRITON_DEJAVU_DEBUG = 1`: Prints debug messages.
 - `TRITON_DEJAVU_DEBUG_DEBUG = 1`: Prints more debug messages (This will be replaced with logger levels in the future). 
 - `TRITON_DEJAVU_USE_ONLY_RESTORED = 1`: Forces the autotuner to just re-evaluate the configurations that were part of the restored autotuner cache in case a new autotuner run (for a new `key`-tuple) is triggered. This could speed up autotuner evaluations by just considering already tried-and-tested configurations out of a bigger configuration space. 
-
-
+- `TRITON_DEJAVU_USE_ISOLATED_PROCESS = 1`: Runs the benchmark function of a kernel in a separate process. This allows the autotuner to survive crashes of one kernel version during autotuning, e.g. if an illegal memory access happens due to an invalid configuration. 
+- `_TRITON_DEJAVU_DETERMINED_ROCM_VERSION` and `_TRITON_DEJAVU_DETERMINED_CUDA_VERSION`: These environment variables overwrite the automatic detection of the cuda or rocm by triton-dejavu. It is not recommended to use them besides exceptional scenarios where it is impossible for triton-dejavu to determine the used versions. 
