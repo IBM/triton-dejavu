@@ -1,5 +1,5 @@
 #  /*******************************************************************************
-#   * Copyright 2024 IBM Corporation
+#   * Copyright 2024 -- 2025 IBM Corporation
 #   *
 #   * Licensed under the Apache License, Version 2.0 (the "License");
 #   * you may not use this file except in compliance with the License.
@@ -28,11 +28,13 @@ from distutils.util import strtobool
 from triton_dejavu import __version__ as dejavu_version
 from .dejavu_utilities import (
     get_storage_identifier,
+    create_dir_if_not_exist_recursive,
     flag_print_debug,
     flag_print_debug_verbose,
     get_storage_prefix,
     get_storage_tag,
 )
+from triton.runtime.jit import DependenciesFinder
 
 
 def _create_tuple(k):
@@ -105,30 +107,38 @@ def _create_config_args(v):
     return ret
 
 
-async def _get_fn_hash(fn: triton.JITFunction):
-    # trigger JIT
-    test = fn.cache_key
-    while fn.hash is None:
-        await asyncio.sleep(0.1)
-    fn_hash = fn.hash
-    return fn_hash
+# async def _get_fn_hash(fn: triton.JITFunction):
+#     # trigger JIT
+#     test = fn.cache_key
+#     from triton.runtime.jit import DependenciesFinder
+#
+#     while fn.hash is None:
+#         await asyncio.sleep(0.1)
+#     starting_line_number = str(fn.starting_line_number)
+#     corrected_fn_hash = fn.hash[: -(len(starting_line_number))]
+#     # assert fn.hash == corrected_fn_hash + starting_line_number
+#     return corrected_fn_hash
+#
+# def _wait_fn_hash(fn):
+#     # loop = asyncio.new_event_loop()
+#     # task = loop.create_task(_get_fn_hash(fn))
+#     # loop.run_until_complete(task)
+#     # fn_hash = task.result()
+#     fn_hash = _get_weak_fn_hash(fn)
+#     return fn_hash
 
 
-def _wait_fn_hash(fn):
-    loop = asyncio.new_event_loop()
-    task = loop.create_task(_get_fn_hash(fn))
-    loop.run_until_complete(task)
-    fn_hash = task.result()
-    return fn_hash
+def _get_weak_fn_hash(fn: triton.JITFunction):
+    # we are not a compiler, just an autotuner match, we don't need globals
+    dependencies_finder = DependenciesFinder(name=fn.__name__, globals={}, src=fn.src)
+    dependencies_finder.visit(fn.parse())
+    return dependencies_finder.ret
 
 
 def _get_folder_name(fn_name, fn_hash, configs_hash, key_hash, param_hash):
     storage_tag = get_storage_tag()
-    # return f"{fn_name}-{fn_hash}-{configs_hash}-{key_hash}-{param_hash}/{storage_tag}"
-    # hash_of_hash = get_string_hash(f"{fn_hash}-{configs_hash}-{key_hash}-{param_hash}")
-    # folder_tree_name = f"{fn_name}-{hash_of_hash}/{storage_tag}"
-    hash_of_hash = get_string_hash(f"{fn_hash}-{key_hash}")
-    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/kernel_configs-{configs_hash}/code_version-{hash_of_hash}/{storage_tag}"
+    fn_hash_256 = get_string_hash(f"{fn_hash}")
+    folder_tree_name = f"{fn_name}/autotune_config-{param_hash}/code_version-{fn_hash_256}/tune_features-{key_hash}/kernel_configs-{configs_hash}/{storage_tag}"
     return folder_tree_name
 
 
@@ -141,23 +151,17 @@ def get_config_list_hash(configs):
     for c in configs:
         s += f"{c}|"
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
 def get_list_hash(l):
     s = "|".join(l)
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
 def get_string_hash(s):
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
-    # triton jit uses sha1?
-    # h = hashlib.sha1(s.encode('utf-8')).hexdigest()
     return h
 
 
@@ -165,31 +169,67 @@ class DejavuStorage:
     def __init__(self) -> None:
         self.storage_prefix = get_storage_prefix()
         self.storage_identifier = get_storage_identifier()
-        self.storage_path = os.path.abspath(
-            f"{self.storage_prefix}/{self.storage_identifier}/"
+        self.default_storage_path = os.path.abspath(
+            os.path.join(self.storage_prefix, self.storage_identifier)
         )
-        if not os.path.exists(self.storage_path):
-            # 0777 permissions to avoid problems with different users in containers and host system
-            os.makedirs(self.storage_path, 0o0777)
+        create_dir_if_not_exist_recursive(self.default_storage_path)
         self.fn_storage = {}
         self.measured_timings = {}
         self._known_files = []
         self.used_configs = {}
+        self.folder_name_to_storage_path = {}
 
     def __store__(self):
         for folder_name in self.fn_storage:
-            dir_name = f"{self.storage_path}/{folder_name}/"
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, 0o0777)
-            file_name = f"{dir_name}/cache.json"
+            file_name = self._get_cache_file_path(folder_name)
+            dir_name = os.path.dirname(file_name)
+            create_dir_if_not_exist_recursive(dir_name)
             if file_name not in self._known_files:
                 self._known_files.append(file_name)
             with open(file_name, "w") as f:
                 json.dump(self.fn_storage[folder_name], f, indent=4)
             try:
-                os.chmod(dir_name, 0o0777)
+                os.chmod(file_name, 0o0777)
             except PermissionError as e:
-                print(f"can't set permission of directory {dir_name}: {e}")
+                print(f"can't set permission of cache file {file_name}: {e}")
+
+    def add_cache_data_path_prefix(
+        self, new_path, fn, configs_hash, key_hash, param_hash
+    ):
+        fn_hash = _get_weak_fn_hash(fn)
+        fn_name = str(fn).split(":")[1][:-1]
+        folder_name = _get_folder_name(
+            fn_name, fn_hash, configs_hash, key_hash, param_hash
+        )
+        self.add_cache_data_path_prefix_for_folder(new_path, folder_name)
+
+    def add_cache_data_path_prefix_for_folder(self, new_path, folder_name):
+        if folder_name in self.folder_name_to_storage_path:
+            raise Exception(
+                f"[triton-dejavu] There exist already a custom dejavu storage path for {folder_name} ({self.folder_name_to_storage_path[folder_name]}), can't over write it."
+            )
+        self.folder_name_to_storage_path[folder_name] = os.path.abspath(
+            os.path.join(new_path, self.storage_identifier)
+        )
+        if flag_print_debug:
+            print(
+                f"[triton-dejavu] Adding {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
+            )
+
+    def _get_cache_file_prefix(self, folder_name):
+        if folder_name in self.folder_name_to_storage_path:
+            if flag_print_debug_verbose:
+                print(
+                    f"[triton-dejavu] Using {self.folder_name_to_storage_path[folder_name]} as custom dejavu storage path for {folder_name}."
+                )
+            return self.folder_name_to_storage_path[folder_name]
+        return self.default_storage_path
+
+    def _get_cache_file_path(self, folder_name):
+        file_name = os.path.join(
+            self._get_cache_file_prefix(folder_name), folder_name, "cache.json"
+        )
+        return file_name
 
     def add_autotuner_cache(
         self,
@@ -206,7 +246,7 @@ class DejavuStorage:
         use_cuda_graph,
         autotuner_keys,
     ):
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
@@ -259,14 +299,16 @@ class DejavuStorage:
             self.used_configs[folder_name] = tmp_used_configs
             self.__store__()
 
-    def restore_autotuner_cache(self, fn, configs_hash, key_hash, param_hash):
+    def restore_autotuner_cache(
+        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None
+    ):
         # we need to consider dependencies as well, so we will wait for fn.hash
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
         )
-        cache_file = f"{self.storage_path}/{folder_name}/cache.json"
+        cache_file = self._get_cache_file_path(folder_name)
         if not os.path.isfile(cache_file):
             if flag_print_debug:
                 print(f"[triton-dejavu] No configurations found for {folder_name}.")
@@ -286,6 +328,8 @@ class DejavuStorage:
         for k, v in cache_json["cache"].items():
             kt = _create_tuple(k)
             va = _create_config_args(v)
+            if all_pre_hook is not None:
+                va["pre_hook"] = all_pre_hook
             c = triton.Config(**va)
             ret[kt] = c
             if c not in tmp_used_configs:
@@ -302,17 +346,21 @@ class DejavuStorage:
         return ret
 
     def get_used_configs(self, fn, configs_hash, key_hash, param_hash):
-        fn_hash = _wait_fn_hash(fn)
+        fn_hash = _get_weak_fn_hash(fn)
         fn_name = str(fn).split(":")[1][:-1]
         folder_name = _get_folder_name(
             fn_name, fn_hash, configs_hash, key_hash, param_hash
         )
         return self.used_configs[folder_name]
 
-    def dump_storage(self, filter_timings=False):
+    def print_storage_info(self):
         print(
-            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}"
+            f"DejavuStorage path:\t\t{self.storage_prefix}\nDejavuStorage identifier:\t{self.storage_identifier}\n"
+            f"\tknown storage keys: {list(self.fn_storage.keys())}"
         )
+
+    def dump_storage(self, filter_timings=False):
+        self.print_storage_info()
         if filter_timings:
             tmp_json = {}
             for k, v in self.fn_storage.items():

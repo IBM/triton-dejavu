@@ -1,5 +1,5 @@
 #  /*******************************************************************************
-#   * Copyright 2024 IBM Corporation
+#   * Copyright 2024 -- 2025 IBM Corporation
 #   *
 #   * Licensed under the Apache License, Version 2.0 (the "License");
 #   * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 #  *******************************************************************************/
 #
 
-from setuptools import setup
+from setuptools import setup, Extension
 import os
 import re
 
@@ -48,7 +48,7 @@ setup(
     name="triton_dejavu",
     version=find_version(os.path.join(PROJECT_ROOT, "triton_dejavu/__init__.py")),
     use_scm_version=True,
-    description="Framework to try to reduce triton overhead to (close to) 0 for well known deployments.",
+    description="Framework to reduce triton overhead to (close to) 0 for well known deployments.",
     long_description=read(PROJECT_ROOT, "README.md"),
     long_description_content_type="text/markdown",
     author="Burkhard Ringlein",

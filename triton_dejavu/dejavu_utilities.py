@@ -1,5 +1,5 @@
 #  /*******************************************************************************
-#   * Copyright 2024 IBM Corporation
+#   * Copyright 2024 -- 2025 IBM Corporation
 #   *
 #   * Licensed under the Apache License, Version 2.0 (the "License");
 #   * you may not use this file except in compliance with the License.
@@ -39,7 +39,10 @@ dejavu_version_major_minor = dejavu_version_major + dejavu_version_minor / math.
 flag_print_autotuning = os.environ.get("TRITON_PRINT_AUTOTUNING", None) == "1"
 flag_print_debug = os.environ.get("TRITON_DEJAVU_DEBUG", "0") == "1"
 flag_print_debug_verbose = os.environ.get("TRITON_DEJAVU_DEBUG_DEBUG", "0") == "1"
-
+if flag_print_debug_verbose:
+    flag_print_debug = True
+if flag_print_debug:
+    flag_print_autotuning = True
 
 cuda_version = None
 rocm_version = None
@@ -125,14 +128,34 @@ def _get_rocm_version():
     return rocm_version
 
 
+def create_dir_if_not_exist_recursive(path, mode=0o777):
+    # 0777 permissions to avoid problems with different users in containers and host system
+    norm_path = os.path.normpath(path)
+    paths_l = norm_path.split(os.sep)
+    path_walked = f"{os.sep}"
+    for p in paths_l:
+        if len(p) == 0:
+            continue
+        path_walked = os.path.join(path_walked, p)
+        create_dir_if_not_exist(path_walked, mode)
+
+
+def create_dir_if_not_exist(path, mode=0o777):
+    if not os.path.exists(path):
+        os.mkdir(path)
+        try:
+            os.chmod(path, mode)
+        except PermissionError as e:
+            print(f"can't set permission of directory {path}: {e}")
+
+
 def get_storage_prefix():
     storage_prefix = os.environ.get(__storage_env_var__, "none")
     if storage_prefix == "none":
         raise Exception(
             f"[triton-dejavu] The environment variable {__storage_env_var__} must be set for triton-dejavu!"
         )
-    if not os.path.exists(storage_prefix):
-        os.makedirs(storage_prefix, 0o0777)
+    create_dir_if_not_exist_recursive(storage_prefix)
     return storage_prefix
 
 
@@ -151,17 +174,26 @@ def _get_dejavu_identifier():
     return dejavu_identifier
 
 
-def get_storage_identifier():
-    # not an absolute path!
+def get_runtime_label():
     if torch.version.hip:
-        runtime_cuda_version = f"rocm_{_get_rocm_version()}"
-    else:
-        runtime_cuda_version = f"cuda_{_get_cuda_version()}"
+        return f"rocm_{_get_rocm_version()}"
+    return f"cuda_{_get_cuda_version()}"
+
+
+def get_gpu_label():
     gpu_name = torch.cuda.get_device_name().replace(" ", "_").replace("/", "_")
+    return gpu_name
+
+
+def get_storage_identifier():
+    # not an absolute path! (also used as keys in dictionaries)
+    runtime_label = get_runtime_label()
+    gpu_name = get_gpu_label()
     triton_version = triton.__version__
-    torch_version = torch.__version__
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{dejavu_identifier}/{runtime_cuda_version}/torch_{torch_version}/triton_{triton_version}/gpu_{gpu_name}"
+    storage_identifier = (
+        f"{dejavu_identifier}/triton_{triton_version}/{runtime_label}/gpu_{gpu_name}"
+    )
     return storage_identifier
 
 
@@ -169,10 +201,9 @@ def get_tmp_storage_path():
     storage_prefix = get_storage_prefix()
     storage_tag = get_storage_tag()
     dejavu_identifier = _get_dejavu_identifier()
-    storage_identifier = f"{storage_prefix}/.{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
-    if not os.path.exists(storage_identifier):
-        os.makedirs(storage_identifier, 0o0777)
-    return storage_identifier
+    tmp_path = f"{storage_prefix}/.{dejavu_identifier}-{__tmp_path_folder_name__}-{storage_tag}/"
+    create_dir_if_not_exist_recursive(tmp_path)
+    return tmp_path
 
 
 def get_triton_config_parameter_names():
@@ -189,8 +220,30 @@ def get_triton_config_parameter_names():
     return parameter_names
 
 
-def get_triton_config_defaults():
+def get_triton_config_defaults_values():
     dummy_config = triton.Config(kwargs={})
     parameter_names = get_triton_config_parameter_names()
     default_dict = {p: getattr(dummy_config, p) for p in parameter_names}
     return default_dict
+
+
+def get_type_dict(value_dict):
+    type_dict = {}
+    # type_dict should have callable members
+    for k, v in value_dict.items():
+        if isinstance(v, int):
+            type_dict[k] = int
+        elif isinstance(v, bool):
+            type_dict[k] = bool
+        elif isinstance(v, type(None)):
+            type_dict[k] = lambda ignore: None
+        else:
+            # TODO: other types possible?
+            type_dict[k] = str
+    return type_dict
+
+
+def get_triton_config_defaults_types():
+    default_dict = get_triton_config_defaults_values()
+    type_dict = get_type_dict(default_dict)
+    return type_dict

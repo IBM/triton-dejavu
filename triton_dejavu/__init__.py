@@ -1,5 +1,5 @@
 #  /*******************************************************************************
-#   * Copyright 2024 IBM Corporation
+#   * Copyright 2024 -- 2025 IBM Corporation
 #   *
 #   * Licensed under the Apache License, Version 2.0 (the "License");
 #   * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 #  *******************************************************************************/
 #
 
-__version__ = "0.5.6"
+__version__ = "0.7.1"
 
 
 from .dejavu_storage import global_dejavu_storage
