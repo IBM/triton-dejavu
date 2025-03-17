@@ -54,6 +54,6 @@ setup(
     author="Burkhard Ringlein",
     python_requires=">=3.8",
     packages=["triton_dejavu"],
-    # package_dir={'': 'triton_dejavu'},
-    include_package_data=True,
+    install_requires=["triton>2.2", "torch>2.3"],
+    extras_require={"BO": ["numpy>=1.23.3", "smac>=2.1.0"]},
 )

@@ -2,9 +2,10 @@ Triton Deja-vu
 =================
 Framework to reduce autotune overhead of [triton-lang](https://github.com/triton-lang/triton) to zero for well known deployments.
 
-This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes two features to the Triton community:
+This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes three features to the Triton community:
 1. Store and safely restore autotuner states using JSON files. 
 2. `ConfigSpaces` to explore a defined space exhaustively.
+3. Bayesian Optimization to speed up the autotuning process.
 
 Additionally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
 
@@ -59,14 +60,6 @@ docker run --rm -it --gpus '"device=0"' -v $(pwd)/dejavu-data/:/storage/dejavu-d
 ```
 
 You can add e.g. `--build-arg triton_version=release/3.2.x` to the docker build command if you want to test not the latest `release` of triton.
-
-Versions
----------------
-
-Triton-dejavu roughly follows [Semantic Versioning](https://semver.org), with stable "releases" tagged. Please see [git tags](https://github.com/IBM/triton-dejavu/tags) for a list of older versions. 
-
-
-However, due to the experimental nature of this repository, internal API compatibility is not always ensured for major _or_ minor version changes. This means that triton-dejavu _can not reuse cache files_ (and cache file structures) that were created with another minor version (i.e. `0.7.X` can't use caches created with `0.5.X`). 
 
 
 Features
@@ -177,7 +170,7 @@ If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message abou
 
 ### Bayesian Optimization to speed up autotune process
 
-Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. For this, triton-dejavu depends on the [SMAC library](https://github.com/automl/SMAC3), see `requirements-opt.txt`. 
+Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. 
 Triton-dejavu also implemented random search, since BO does not always convert quicker. 
 
 Both features can be enabled with additional parameters to `triton_dejavu.autotune()`:
@@ -186,11 +179,26 @@ Both features can be enabled with additional parameters to `triton_dejavu.autotu
 - `search_max_search_t`: Maximum search time (in seconds) for BO and Random Search.
 - `search_max_share`: Maximum percentage of the total config space BO and Random Search can search through. This translates into a maximum trial number for the optimizer.
 
+For the BO search, triton-dejavu depends on the [SMAC library](https://github.com/automl/SMAC3) and `numpy`, see `requirements-opt.txt`. These dependencies for BO sarch can also be installed via:
+```
+pip install "triton-dejavu[BO] @ file:./triton-dejavu"
+```
+Please note that smac depends on [swig](https://www.swig.org), which need to be installed first.
+
 
 Compatibility
 ------------------
 
 Triton-dejavu is currently compatible (and tested) with triton versions 2.2 and newer. Triton-dejavu is compatible with both officially supported triton backends (nvidia and amd).
+
+
+Versions
+---------------
+
+Triton-dejavu roughly follows [Semantic Versioning](https://semver.org), with stable "releases" tagged. Please see [git tags](https://github.com/IBM/triton-dejavu/tags) for a list of older versions. 
+
+
+However, due to the experimental nature of this repository, internal API compatibility is not always ensured for major _or_ minor version changes. This means that triton-dejavu _can not reuse cache files_ (and cache file structures) that were created with another minor version (i.e. `0.7.X` can't use caches created with `0.5.X`). 
 
 
 Environment variables
