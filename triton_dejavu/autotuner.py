@@ -223,11 +223,7 @@ class Autotuner(KernelInterface):
         self.use_bo = use_bo
         self.use_random_search = use_random_search
         self.search_max_repeat = search_max_repeat
-        self.search_max_n_trials = min(
-            int(max(__min_search_samples__, search_max_share * self.configs_len))
-            + self.config_space._num_of_invalid_configs,
-            self.configs_len,
-        )
+        self.search_max_n_trials = None
         self.max_search_time_s = search_max_search_t
         if self.use_bo:
             if not self.config_space or prune_configs_by:
@@ -243,6 +239,12 @@ class Autotuner(KernelInterface):
             import numpy as np
             from smac import HyperparameterOptimizationFacade, Scenario
 
+            self.search_max_n_trials = min(
+                int(max(__min_search_samples__, search_max_share * self.configs_len))
+                + self.config_space._num_of_invalid_configs,
+                self.configs_len,
+            )
+
             # convert config space
             self.bohb_config_space = self.config_space.get_BohbConfigSpace()
             if flag_print_debug:
@@ -256,6 +258,11 @@ class Autotuner(KernelInterface):
                 )
             # just test import, random list is generated at every search
             import numpy as np
+
+            self.search_max_n_trials = min(
+                int(max(__min_search_samples__, search_max_share * self.configs_len)),
+                self.configs_len,
+            )
 
             if flag_print_debug:
                 print(
