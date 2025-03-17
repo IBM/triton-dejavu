@@ -938,10 +938,10 @@ def autotune(
     :param prepare_informed_fallback: A lambda function to apply preprocessing to the existing autotuner cache at start time to facilitate the `informed_fallback`
                                       heuristic. The argument is the cache dict and any dict in return is expected.
     :type prepare_informed_fallback: callable(cache) -> dict
-    :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
+    :param use_bo: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the chosen kernel).
                    This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
     :type use_bo: bool
-    :param use_random_search: Activate Random Searchs to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the choosen kernel).
+    :param use_random_search: Activate Random Search to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the chosen kernel).
                    This feature can be used in combination with config_space and config lists. However, prune_configs_by must not be provided.
     :type use_random_search: bool
     :param search_max_search_t: Maximum search time (in seconds) for BO and Random Search.
