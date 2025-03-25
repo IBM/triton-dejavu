@@ -1117,22 +1117,24 @@ class ConfigSpace:
         self.config_list = config_list
         return config_list
 
-    def generate_config_list_sorted(self, sort_func = None):
+    def generate_config_list_sorted(self, sort_func=None):
         if len(self.config_list) == 0:
             self.generate_config_list()
         if sort_func is None:
             # sort by "invoked threads"
-            compute_params = ['num_warps', 'num_stages', "waves_per_eu"]
-            used_compute_params = [p for p in compute_params if p in __triton_config_parameter_names__]
+            compute_params = ["num_warps", "num_stages", "waves_per_eu"]
+            used_compute_params = [
+                p for p in compute_params if p in __triton_config_parameter_names__
+            ]
             print(self.kwarg_types)
             print(self.config_list[0])
             compute_kwargs = []
-            for k,t in self.kwarg_types.items():
+            for k, t in self.kwarg_types.items():
                 if t == int:
                     compute_kwargs.append(k)
             print(used_compute_params)
             print(compute_kwargs)
-            
+
             def sort_func(c: Config):
                 ret = 1
                 for param in used_compute_params:
@@ -1140,6 +1142,7 @@ class ConfigSpace:
                 for param in compute_kwargs:
                     ret *= c.kwargs[param]
                 return ret
+
         sorted_list = sorted(self.config_list, key=sort_func)
         return sorted_list
 
