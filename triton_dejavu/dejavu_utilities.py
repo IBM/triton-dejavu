@@ -236,10 +236,10 @@ def get_type_dict(value_dict):
     type_dict = {}
     # type_dict should have callable members
     for k, v in value_dict.items():
-        if isinstance(v, int):
-            type_dict[k] = int
-        elif isinstance(v, bool):
+        if isinstance(v, bool):
             type_dict[k] = bool
+        elif isinstance(v, int):
+            type_dict[k] = int
         elif isinstance(v, type(None)):
             type_dict[k] = lambda ignore: None
         else:
