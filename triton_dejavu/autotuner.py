@@ -1126,14 +1126,10 @@ class ConfigSpace:
             used_compute_params = [
                 p for p in compute_params if p in __triton_config_parameter_names__
             ]
-            print(self.kwarg_types)
-            print(self.config_list[0])
             compute_kwargs = []
             for k, t in self.kwarg_types.items():
                 if t == int:
                     compute_kwargs.append(k)
-            print(used_compute_params)
-            print(compute_kwargs)
 
             def sort_func(c: Config):
                 ret = 1
