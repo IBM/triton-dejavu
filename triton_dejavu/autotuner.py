@@ -327,7 +327,7 @@ class Autotuner(KernelInterface):
                 and len(self._cache_for_fallback) > 0
             ):
                 self._cache_for_fallback = prepare_informed_fallback(
-                    self._cache_for_fallback
+                    self._cache_for_fallback, self.config_space, self.configs
                 )
                 assert (
                     self._cache_for_fallback
@@ -352,7 +352,7 @@ class Autotuner(KernelInterface):
             ), "force to use fallback functions, but none specified"
             if self.informed_fallback is not None and len(self._cache_for_fallback) > 0:
                 self._fallback_call = lambda key: self.informed_fallback(
-                    key, self._cache_for_fallback
+                    key, self._cache_for_fallback, self.config_space, self.configs
                 )
                 if flag_print_debug:
                     print(
@@ -1041,6 +1041,7 @@ class ConfigSpace:
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
         self._num_of_invalid_configs = 0
+        self.config_list = []
 
         # adapt to current triton platform
         for k, v in __triton_config_default_values__.items():
@@ -1109,11 +1110,38 @@ class ConfigSpace:
                 **config_params,
             )
             config_list.append(nc)
-        if flag_print_debug:
+        if flag_print_debug and len(self.config_list) == 0:
             print(
                 f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}."
             )
+        self.config_list = config_list
         return config_list
+
+    def generate_config_list_sorted(self, sort_func = None):
+        if len(self.config_list) == 0:
+            self.generate_config_list()
+        if sort_func is None:
+            # sort by "invoked threads"
+            compute_params = ['num_warps', 'num_stages', "waves_per_eu"]
+            used_compute_params = [p for p in compute_params if p in __triton_config_parameter_names__]
+            print(self.kwarg_types)
+            print(self.config_list[0])
+            compute_kwargs = []
+            for k,t in self.kwarg_types.items():
+                if t == int:
+                    compute_kwargs.append(k)
+            print(used_compute_params)
+            print(compute_kwargs)
+            
+            def sort_func(c: Config):
+                ret = 1
+                for param in used_compute_params:
+                    ret *= getattr(c, param)
+                for param in compute_kwargs:
+                    ret *= c.kwargs[param]
+                return ret
+        sorted_list = sorted(self.config_list, key=sort_func)
+        return sorted_list
 
     def get_BohbConfigSpace(self):
         from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
