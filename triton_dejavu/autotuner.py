@@ -1117,10 +1117,13 @@ class ConfigSpace:
         self.config_list = config_list
         return config_list
 
-    def generate_config_list_sorted(self, sort_func=None):
+    def generate_config_list_sorted(self, sort_func="num_threads"):
+        import numpy as np
+
         if len(self.config_list) == 0:
             self.generate_config_list()
-        if sort_func is None:
+        # defining "built-in" sorting functions
+        if sort_func == "num_threads":
             # sort by "invoked threads"
             compute_params = ["num_warps", "num_stages", "waves_per_eu"]
             used_compute_params = [
@@ -1138,6 +1141,21 @@ class ConfigSpace:
                 for param in compute_kwargs:
                     ret *= c.kwargs[param]
                 return ret
+
+        elif sort_func == "symmetry":
+            # sort by "symmetry of kwargs blocks"
+            compute_kwargs = []
+            for k, t in self.kwarg_types.items():
+                if t == int:
+                    compute_kwargs.append(k)
+
+            def sort_func(c: Config):
+                kwargs_values = [v for k, v in c.kwargs.items() if k in compute_kwargs]
+                kwargs_values.sort()
+                ret = int(np.diff(kwargs_values)[0])
+                return ret
+
+        # else: -> use passed sort_func
 
         sorted_list = sorted(self.config_list, key=sort_func)
         return sorted_list
