@@ -1118,7 +1118,6 @@ class ConfigSpace:
         return config_list
 
     def generate_config_list_sorted(self, sort_func="num_threads"):
-        import numpy as np
 
         if len(self.config_list) == 0:
             self.generate_config_list()
@@ -1151,8 +1150,11 @@ class ConfigSpace:
 
             def sort_func(c: Config):
                 kwargs_values = [v for k, v in c.kwargs.items() if k in compute_kwargs]
-                kwargs_values.sort()
-                ret = int(np.diff(kwargs_values)[0])
+                kwargs_values.sort(reverse=True)
+                # ret = int(np.diff(kwargs_values)[0])
+                ret = kwargs_values[0]
+                for v in kwargs_values[1:]:
+                    ret -= v
                 return ret
 
         # else: -> use passed sort_func
