@@ -32,6 +32,10 @@ import triton
 from triton.runtime.driver import driver
 import gc
 import traceback
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+import glob
+import shutil
 
 from .dejavu_utilities import (
     create_dir_if_not_exist_recursive,
@@ -231,15 +235,85 @@ class KernelEvalCall:
 
     def get_stream(self):
         return self.benchmarking_stream
-
+    
     def get_compiled_run(self) -> CompiledKernelRun:
+        # os.environ['LLVM_IR_ENABLE_DUMP'] = '1'
+        os.environ['TRITON_KERNEL_DUMP'] = '1'
+        os.environ['TRITON_ALWAYS_COMPILE'] = '1'
+        ir_dump_d = f"{get_tmp_storage_path()}/ir_analysis/"
+        os.environ['TRITON_DUMP_DIR'] = ir_dump_d
+        create_dir_if_not_exist_recursive(ir_dump_d)
+        shutil.rmtree(ir_dump_d)
+        # old_files = glob.glob(f"{ir_dump_d}/*")
+        # old_dirs = []
+        # for f in old_files:
+        #     if os.path.isdir(f):
+        #         old_dirs.append(f)
+        #     else:
+        #         os.remove(f)
+        # old_dirs.reverse()
+        # for d in old_dirs:
+        #     os.rmdir(d)
+        # ir_out_f = io.StringIO()
+        # with redirect_stderr(ir_out_f):
+        # with redirect_stdout(ir_out_f):
+        ret = self._get_compiled_run()
+        #     sys.stdout.flush()
+        #     sys.stderr.flush()
+        # del os.environ['LLVM_IR_ENABLE_DUMP']
+        # del os.environ['MLIR_ENABLE_DUMP']
+        del os.environ['TRITON_KERNEL_DUMP']
+        del os.environ['TRITON_ALWAYS_COMPILE']
+        # ir_out_s = ir_out_f.getvalue()
+
+        os.system(f"ls -al {ir_dump_d}")
+        target_file = glob.glob(f"{ir_dump_d}/*/*.ptx")
+        # print(len(target_file))
+        ir_out_s = Path(target_file[0]).read_text()
+
+        # print(ir_out_s)
+        # ir_splits = ir_out_s.split('define void @')
+        # ir_splits = ir_out_s.split('; *** IR Dump ')
+        # last_split = ir_splits[-1].split(' ***')
+        # print(f"captured {len(ir_splits)}; last one with title *** IR Dump {last_split[0]} ***")
+        # print(last_split[-1])
+        # print(len(last_split))
+        
+        ir_save_d = f"{get_tmp_storage_path()}/ir_analysis_store2/{str(self.cur_config).replace(' ', '-')}/"
+        save_file = f"{ir_save_d}/result.ptx"
+        create_dir_if_not_exist_recursive(ir_save_d)
+        shutil.copyfile(target_file[0], save_file)
+        os.chmod(save_file, 0o0777)
+
+        return ret
+        
+
+    def _get_compiled_run(self) -> CompiledKernelRun:
         # need to call config pre-hook first...
         self._call_config_pre_hook()
 
-        self.current["warmup"] = True
+        # os.environ['LLVM_IR_ENABLE_DUMP'] = '1'
+        # # os.environ['MLIR_ENABLE_DUMP'] = '1'
+        # ir_out_f = io.StringIO()
+        # ir_dump_f = f"{get_tmp_storage_path()}/ir_analysis/cur.ir"
+        # # os.environ['MLIR_DUMP_PATH'] = ir_dump_f
+        # create_dir_if_not_exist_recursive(os.path.dirname(ir_dump_f))
+        # if not os.path.isfile(ir_dump_f):
+        #     open(ir_dump_f, "a").close()
+        # os.chmod(ir_dump_f, 0o0777)
+        # stderr_fd_tmp = f"{get_tmp_storage_path()}/ir_analysis/stderr.tmpfd.delme"
+        # open(stderr_fd_tmp, "a").close()
+        # os.dup2(2, os.open(stderr_fd_tmp, os.O_APPEND))
+        # orig_stderr_fd = os.dup(2)
+        # os.dup2(os.open(ir_dump_f, os.O_APPEND), 2)
+
         compile_start = time.time()
+        # with redirect_stderr(ir_out_f):
+        # with redirect_stdout(ir_out_f):
+        self.current["warmup"] = True
         kernel = self.fn.run(*self.args, **self.current)
         compile_end = time.time()
+
         (
             bound_args,
             sig_and_spec,
@@ -250,8 +324,23 @@ class KernelEvalCall:
         bind_end = time.time()
         self._jit_was_triggered = True
 
+        # self.current["warmup"] = False  # necessary?
+
         # device = triton.runtime.driver.active.get_current_device()
         # stream = triton.runtime.driver.active.get_current_stream(device)
+
+        # # ir_out_s = Path(ir_dump_f).read_text()
+        # # os.dup2(orig_stderr_fd, 2)
+        # del os.environ['LLVM_IR_ENABLE_DUMP']
+        # # del os.environ['MLIR_ENABLE_DUMP']
+        # ir_out_s = ir_out_f.getvalue()
+        # print(ir_out_s)
+        # # ir_splits = ir_out_s.split('define void @')
+        # ir_splits = ir_out_s.split('; *** IR Dump ')
+        # last_split = ir_splits[-1].split(' ***')
+        # print(f"captured {len(ir_splits)}; last one with title *** IR Dump {last_split[0]} ***")
+        # print(last_split[-1])
+        # print(len(last_split))
 
         if callable(self.current["grid"]):
             grid = self.current["grid"](self.current)
