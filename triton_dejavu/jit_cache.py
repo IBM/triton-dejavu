@@ -60,7 +60,20 @@ from triton_dejavu.utils import global_metadata_store
 from triton_dejavu.testing import SerializeableCompiledKernel, CompiledKernelRun
 
 
-global_cache_lock = False
+class CacheLock:
+
+    def __init__(self):
+        self.is_locked = False
+
+    def lock(self):
+        self.is_locked = True
+        # print("cache lock is locked")
+
+    def unlock(self):
+        self.is_locked = False
+
+
+global_cache_lock = CacheLock()
 
 
 class PreparedKernel:
@@ -82,6 +95,7 @@ class PreparedKernel:
         # self.arg_names = arg_names
         self.non_const_arg_names = non_const_arg_names
         # self.non_const_arg_index = {}
+        self.cache_key = 'should-be-random-string'
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
@@ -115,6 +129,13 @@ class PreparedKernel:
             self.launch_exit_hook,
             *non_constsexpr_vals,
         )
+    
+    def get_deps_tree(self):
+        # TODO: maybe make a dict for each check key
+        return None
+
+    def get_key(self):
+        return self.cache_key
 
 
 class JitCache(KernelInterface):
@@ -123,7 +144,7 @@ class JitCache(KernelInterface):
         self,
         fn,
         arg_names,
-        cache_lock,
+        cache_lock: CacheLock,
         check_keys,
     ):
         self.arg_names = arg_names
@@ -134,6 +155,8 @@ class JitCache(KernelInterface):
         self.cache_lock = cache_lock
         self.check_keys = check_keys
         self.kernel_cache = {}
+        # TOOD: maybe?
+        self.cache_list = {arg_to_check: {} for arg_to_check in check_keys}
 
     def _call_config_pre_hook(self, *args, config, **kwargs):
         # must be done before binding...so not separated...
@@ -215,10 +238,19 @@ class JitCache(KernelInterface):
         # ret = self.fn.run(*args, **kwargs)
         # return ret
 
-        prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
+        # for the time being...
+        assert len(self.check_keys) == 0 
+
+        # print(f"my lock: {self.cache_lock.is_locked}")
+
+        if not self.cache_lock.is_locked: # or len(self.kernel_cache) == 0:
+            prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
+            self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
+        
+        kernel_variant = self.kernel_cache['should-be-random-string']
 
         # self.kernel_cache['none'] = prepared_kernel
-        return prepared_kernel(*args, **kwargs)
+        return kernel_variant(*args, **kwargs)
 
     def get_compiled_run_version(self, *args, **kwargs) -> CompiledKernelRun:
         # need to call config pre-hook first...
