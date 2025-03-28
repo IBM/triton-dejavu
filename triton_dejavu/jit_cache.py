@@ -64,7 +64,16 @@ global_cache_lock = False
 
 
 class PreparedKernel:
-    def __init__(self, grid, kernel, launch_metadata, launch_enter_hook, launch_exit_hook, arg_names, non_const_arg_names):
+    def __init__(
+        self,
+        grid,
+        kernel,
+        launch_metadata,
+        launch_enter_hook,
+        launch_exit_hook,
+        arg_names,
+        non_const_arg_names,
+    ):
         self.grid_obj = grid
         self.kernel = kernel
         self.launch_metadata = launch_metadata
@@ -74,7 +83,6 @@ class PreparedKernel:
         self.non_const_arg_names = non_const_arg_names
         # self.non_const_arg_index = {}
 
-    
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
 
@@ -112,9 +120,11 @@ class PreparedKernel:
 class JitCache(KernelInterface):
 
     def __init__(
-            self, fn, arg_names,
-    cache_lock,
-    check_keys,    
+        self,
+        fn,
+        arg_names,
+        cache_lock,
+        check_keys,
     ):
         self.arg_names = arg_names
         self.fn = fn
@@ -124,7 +134,7 @@ class JitCache(KernelInterface):
         self.cache_lock = cache_lock
         self.check_keys = check_keys
         self.kernel_cache = {}
-    
+
     def _call_config_pre_hook(self, *args, config, **kwargs):
         # must be done before binding...so not separated...
         pre_hook = config.pre_hook if config.pre_hook else None
@@ -140,7 +150,7 @@ class JitCache(KernelInterface):
         print(f"\t...pre_hook done ({prehook_duration}s).")
 
     def _get_prepared_kernel(self, *args, **kwargs) -> PreparedKernel:
-        
+
         kwargs["warmup"] = True
         compile_start = time.time()
         kernel = self.fn.run(*args, **kwargs)
@@ -167,19 +177,21 @@ class JitCache(KernelInterface):
             grid = kwargs["grid"](kwargs)
         else:
             grid = kwargs["grid"]
-        
+
         device = driver.active.get_current_device()
         stream = driver.active.get_current_stream(device)
-        launch_metadata = kernel.launch_metadata(
-            grid, stream, *non_constexpr_vals
-        )
+        launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
-        prepared_kernel = PreparedKernel(grid, kernel, launch_metadata,
+        prepared_kernel = PreparedKernel(
+            grid,
+            kernel,
+            launch_metadata,
             self.fn.CompiledKernel.launch_enter_hook,
             self.fn.CompiledKernel.launch_exit_hook,
             self.arg_names,
-            non_const_arg_names)
-        
+            non_const_arg_names,
+        )
+
         wrapper_end = time.time()
         compile_time = compile_end - compile_start
         bind_time = bind_end - compile_end
@@ -190,10 +202,10 @@ class JitCache(KernelInterface):
                 f"[triton-dejavu] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
             )
 
-        return prepared_kernel 
+        return prepared_kernel
 
     def run(self, *args, **kwargs):
-        # TODO: extract config? 
+        # TODO: extract config?
         # current = dict(kwargs, **config.all_kwargs())
 
         # we only support kwargs
@@ -208,7 +220,6 @@ class JitCache(KernelInterface):
         # self.kernel_cache['none'] = prepared_kernel
         return prepared_kernel(*args, **kwargs)
 
-    
     def get_compiled_run_version(self, *args, **kwargs) -> CompiledKernelRun:
         # need to call config pre-hook first...
         # self._call_config_pre_hook()
@@ -240,12 +251,10 @@ class JitCache(KernelInterface):
             grid = kwargs["grid"](kwargs)
         else:
             grid = kwargs["grid"]
-        
+
         device = driver.active.get_current_device()
         stream = driver.active.get_current_stream(device)
-        launch_metadata = kernel.launch_metadata(
-            grid, stream, *non_constexpr_vals
-        )
+        launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
         grid_size = len(grid)
         grid_0 = grid[0]
@@ -279,11 +288,11 @@ class JitCache(KernelInterface):
 
 def jitcache(
     cache_lock,
-    check_keys,    
+    check_keys,
 ):
     """
     Decorator for caching a :code:`triton.jit`'d function.
-    
+
     """
 
     def decorator(fn):
@@ -293,5 +302,5 @@ def jitcache(
             cache_lock,
             check_keys,
         )
-    
+
     return decorator
