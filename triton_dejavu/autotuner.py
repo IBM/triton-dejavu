@@ -1050,7 +1050,7 @@ class ConfigSpace:
         for k, v in dict(configuration_args).items():
             if k not in __triton_config_parameter_names__:
                 print(
-                    f"[triton-dejav] WARNING: Configuration parameter {k} not supported on this platform and will be ignored."
+                    f"[triton-dejavu] WARNING: Configuration parameter {k} not supported on this platform and will be ignored."
                 )
                 continue
             setattr(self, k, v)

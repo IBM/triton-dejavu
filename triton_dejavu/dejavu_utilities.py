@@ -222,13 +222,18 @@ def get_triton_config_parameter_names():
     if triton_version_major_minor == "2.3":
         # part of the object, but not part of the __init__ parameters for triton 2.3.x
         del parameter_names[parameter_names.index("enable_persistent")]
+    if torch.version.hip and int(triton.__version__.split(".")[0]) >= 3:
+        # TODO: remove once default config on rocm is fixed?
+        # TODO: maybe also include the env variable `OPTIMIZE_EPILOGUE`
+        parameter_names.append("waves_per_eu")
+        parameter_names.append("matrix_instr_nonkdim")
     return parameter_names
 
 
 def get_triton_config_defaults_values():
     dummy_config = triton.Config(kwargs={})
     parameter_names = get_triton_config_parameter_names()
-    default_dict = {p: getattr(dummy_config, p) for p in parameter_names}
+    default_dict = {p: getattr(dummy_config, p, None) for p in parameter_names}
     return default_dict
 
 
