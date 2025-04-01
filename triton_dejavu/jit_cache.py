@@ -86,6 +86,9 @@ class PreparedKernel:
         launch_exit_hook,
         arg_names,
         non_const_arg_names,
+        cache_key,
+        # check_keys,
+        # current_kwargs,
     ):
         self.grid_obj = grid
         self.kernel = kernel
@@ -94,14 +97,22 @@ class PreparedKernel:
         self.launch_exit_hook = launch_exit_hook
         # self.arg_names = arg_names
         self.non_const_arg_names = non_const_arg_names
-        # self.non_const_arg_index = {}
-        self.cache_key = 'should-be-random-string'
+        # self.keys_for_cache_index = check_keys
+        # self.non_const_arg_index = {
+        # cache_key = ''
+        # for c_arg_name in check_keys:
+        #     cache_key += str(current_kwargs[c_arg_name])
+        # # self.cache_key = 'should-be-random-string'
+        self.cache_key = cache_key
+        # TODO: safe to cache?
+        self.device = driver.active.get_current_device()
+        self.stream = driver.active.get_current_stream(self.device)
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
 
-        device = driver.active.get_current_device()
-        stream = driver.active.get_current_stream(device)
+        # device = driver.active.get_current_device()
+        # stream = driver.active.get_current_stream(device)
 
         non_constsexpr_vals = []
         # order should be the same...
@@ -121,7 +132,7 @@ class PreparedKernel:
             grid_0,
             grid_1,
             grid_2,
-            stream,
+            self.stream,
             self.kernel.function,
             self.kernel.packed_metadata,
             self.launch_metadata,
@@ -129,10 +140,10 @@ class PreparedKernel:
             self.launch_exit_hook,
             *non_constsexpr_vals,
         )
-    
-    def get_deps_tree(self):
-        # TODO: maybe make a dict for each check key
-        return None
+
+    # def get_deps_tree(self):
+    #     # TODO: maybe make a dict for each check key
+    #     return None
 
     def get_key(self):
         return self.cache_key
@@ -156,7 +167,15 @@ class JitCache(KernelInterface):
         self.check_keys = check_keys
         self.kernel_cache = {}
         # TOOD: maybe?
-        self.cache_list = {arg_to_check: {} for arg_to_check in check_keys}
+        # self.cache_list = {arg_to_check: {} for arg_to_check in check_keys}
+
+        def calc_cache_index(kwargs):
+            cache_key = ""
+            for c_arg_name in check_keys:
+                cache_key += str(kwargs[c_arg_name])
+            return cache_key
+
+        self.cache_index_func = calc_cache_index
 
     def _call_config_pre_hook(self, *args, config, **kwargs):
         # must be done before binding...so not separated...
@@ -213,6 +232,9 @@ class JitCache(KernelInterface):
             self.fn.CompiledKernel.launch_exit_hook,
             self.arg_names,
             non_const_arg_names,
+            self.cache_index_func(kwargs),
+            # self.check_keys,
+            # kwargs,
         )
 
         wrapper_end = time.time()
@@ -239,15 +261,15 @@ class JitCache(KernelInterface):
         # return ret
 
         # for the time being...
-        assert len(self.check_keys) == 0 
+        # assert len(self.check_keys) == 0
 
         # print(f"my lock: {self.cache_lock.is_locked}")
 
-        if not self.cache_lock.is_locked: # or len(self.kernel_cache) == 0:
+        if not self.cache_lock.is_locked or len(self.kernel_cache) == 0:
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
-        
-        kernel_variant = self.kernel_cache['should-be-random-string']
+
+        kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
 
         # self.kernel_cache['none'] = prepared_kernel
         return kernel_variant(*args, **kwargs)
