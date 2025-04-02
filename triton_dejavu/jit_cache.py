@@ -39,6 +39,9 @@ from triton.runtime.driver import driver
 from triton import __version__ as triton_version
 
 triton_major_version = int(triton_version.split(".")[0])
+triton_minor_version = int(triton_version.split(".")[1])
+triton_version_float = triton_major_version + float(triton_minor_version/10)
+
 
 from triton_dejavu.dejavu_storage import (
     global_dejavu_storage,
@@ -89,6 +92,8 @@ class PreparedKernel:
         cache_key,
         # check_keys,
         # current_kwargs,
+        device,
+        stream
     ):
         self.grid_obj = grid
         self.kernel = kernel
@@ -105,8 +110,8 @@ class PreparedKernel:
         # # self.cache_key = 'should-be-random-string'
         self.cache_key = cache_key
         # TODO: safe to cache?
-        self.device = driver.active.get_current_device()
-        self.stream = driver.active.get_current_stream(self.device)
+        self.device = device
+        self.stream = stream
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
@@ -158,6 +163,7 @@ class JitCache(KernelInterface):
         cache_lock: CacheLock,
         check_keys,
     ):
+        assert 3.0 <= triton_version_float <= 3.2
         self.arg_names = arg_names
         self.fn = fn
         self.base_fn = fn
@@ -166,8 +172,6 @@ class JitCache(KernelInterface):
         self.cache_lock = cache_lock
         self.check_keys = check_keys
         self.kernel_cache = {}
-        # TOOD: maybe?
-        # self.cache_list = {arg_to_check: {} for arg_to_check in check_keys}
 
         def calc_cache_index(kwargs):
             cache_key = ""
@@ -177,19 +181,19 @@ class JitCache(KernelInterface):
 
         self.cache_index_func = calc_cache_index
 
-    def _call_config_pre_hook(self, *args, config, **kwargs):
-        # must be done before binding...so not separated...
-        pre_hook = config.pre_hook if config.pre_hook else None
-        if not pre_hook:
-            return
-        print(f"[triton-dejavu] Executing pre_hook of config {config}...")
-        prehook_start = time.time()
-        nargs = dict(zip(self.arg_names, args))
-        full_nargs = {**nargs, **kwargs}
-        pre_hook(full_nargs)
-        prehook_end = time.time()
-        prehook_duration = prehook_end - prehook_start
-        print(f"\t...pre_hook done ({prehook_duration}s).")
+    # def _call_config_pre_hook(self, *args, config, **kwargs):
+    #     # must be done before binding...so not separated...
+    #     pre_hook = config.pre_hook if config.pre_hook else None
+    #     if not pre_hook:
+    #         return
+    #     print(f"[triton-dejavu] Executing pre_hook of config {config}...")
+    #     prehook_start = time.time()
+    #     nargs = dict(zip(self.arg_names, args))
+    #     full_nargs = {**nargs, **kwargs}
+    #     pre_hook(full_nargs)
+    #     prehook_end = time.time()
+    #     prehook_duration = prehook_end - prehook_start
+    #     print(f"\t...pre_hook done ({prehook_duration}s).")
 
     def _get_prepared_kernel(self, *args, **kwargs) -> PreparedKernel:
 
@@ -235,6 +239,8 @@ class JitCache(KernelInterface):
             self.cache_index_func(kwargs),
             # self.check_keys,
             # kwargs,
+            device,
+            stream,
         )
 
         wrapper_end = time.time()
@@ -250,94 +256,90 @@ class JitCache(KernelInterface):
         return prepared_kernel
 
     def run(self, *args, **kwargs):
-        # TODO: extract config?
-        # current = dict(kwargs, **config.all_kwargs())
-
         # we only support kwargs
         assert len(args) == 0
-
-        # compiled_kernel = self.get_compiled_run_version(*args, **kwargs)
-        # ret = self.fn.run(*args, **kwargs)
-        # return ret
-
-        # for the time being...
-        # assert len(self.check_keys) == 0
-
+        # assert no config pre-hook
+        assert "pre_hook" not in kwargs or kwargs["pre_hook"] is None
+        
         # print(f"my lock: {self.cache_lock.is_locked}")
-
-        if not self.cache_lock.is_locked or len(self.kernel_cache) == 0:
+        # TODO ?: or len(self.kernel_cache) == 0:
+        if not self.cache_lock.is_locked: 
+            # we only support int, bool, float as cache index
+            for key in self.check_keys:
+                assert type(kwargs[key]) in [int, bool, float]
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
+        # TODO: if the cache index is not present, it will create an exception
+        #  should we instead then compile it? 
         kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
 
-        # self.kernel_cache['none'] = prepared_kernel
         return kernel_variant(*args, **kwargs)
 
-    def get_compiled_run_version(self, *args, **kwargs) -> CompiledKernelRun:
-        # need to call config pre-hook first...
-        # self._call_config_pre_hook()
+    # def get_compiled_run_version(self, *args, **kwargs) -> CompiledKernelRun:
+    #     # need to call config pre-hook first...
+    #     # self._call_config_pre_hook()
 
-        # self.current["warmup"] = True
-        kwargs["warmup"] = True
-        compile_start = time.time()
-        kernel = self.fn.run(*args, **kwargs)
-        compile_end = time.time()
+    #     # self.current["warmup"] = True
+    #     kwargs["warmup"] = True
+    #     compile_start = time.time()
+    #     kernel = self.fn.run(*args, **kwargs)
+    #     compile_end = time.time()
 
-        const_arg_names = []
-        non_const_arg_names = []
-        for p in self.fn.params:
-            if p.is_constexpr or p.is_const:
-                const_arg_names.append(p.name)
-            else:
-                non_const_arg_names.append(p.name)
+    #     const_arg_names = []
+    #     non_const_arg_names = []
+    #     for p in self.fn.params:
+    #         if p.is_constexpr or p.is_const:
+    #             const_arg_names.append(p.name)
+    #         else:
+    #             non_const_arg_names.append(p.name)
 
-        (
-            bound_args,
-            sig_and_spec,
-            constexpr_vals,
-            non_constexpr_vals,
-            excess_kwargs,
-        ) = self.fn.binder(*args, **kwargs)
-        bind_end = time.time()
+    #     (
+    #         bound_args,
+    #         sig_and_spec,
+    #         constexpr_vals,
+    #         non_constexpr_vals,
+    #         excess_kwargs,
+    #     ) = self.fn.binder(*args, **kwargs)
+    #     bind_end = time.time()
 
-        if callable(kwargs["grid"]):
-            grid = kwargs["grid"](kwargs)
-        else:
-            grid = kwargs["grid"]
+    #     if callable(kwargs["grid"]):
+    #         grid = kwargs["grid"](kwargs)
+    #     else:
+    #         grid = kwargs["grid"]
 
-        device = driver.active.get_current_device()
-        stream = driver.active.get_current_stream(device)
-        launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
+    #     device = driver.active.get_current_device()
+    #     stream = driver.active.get_current_stream(device)
+    #     launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
-        grid_size = len(grid)
-        grid_0 = grid[0]
-        grid_1 = grid[1] if grid_size > 1 else 1
-        grid_2 = grid[2] if grid_size > 2 else 1
+    #     grid_size = len(grid)
+    #     grid_0 = grid[0]
+    #     grid_1 = grid[1] if grid_size > 1 else 1
+    #     grid_2 = grid[2] if grid_size > 2 else 1
 
-        # kernel.run(grid_0, grid_1, grid_2, stream, kernel.function, kernel.packed_metadata, launch_metadata,
-        #            self.fn.CompiledKernel.launch_enter_hook, self.fn.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
-        compiled_kernel = CompiledKernelRun(
-            grid_0,
-            grid_1,
-            grid_2,
-            kernel,
-            launch_metadata,
-            self.fn.CompiledKernel.launch_enter_hook,
-            self.fn.CompiledKernel.launch_exit_hook,
-            *non_constexpr_vals,
-        )
-        wrapper_end = time.time()
-        compile_time = compile_end - compile_start
-        bind_time = bind_end - compile_end
-        wrapper_time = wrapper_end - bind_end
+    #     # kernel.run(grid_0, grid_1, grid_2, stream, kernel.function, kernel.packed_metadata, launch_metadata,
+    #     #            self.fn.CompiledKernel.launch_enter_hook, self.fn.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
+    #     compiled_kernel = CompiledKernelRun(
+    #         grid_0,
+    #         grid_1,
+    #         grid_2,
+    #         kernel,
+    #         launch_metadata,
+    #         self.fn.CompiledKernel.launch_enter_hook,
+    #         self.fn.CompiledKernel.launch_exit_hook,
+    #         *non_constexpr_vals,
+    #     )
+    #     wrapper_end = time.time()
+    #     compile_time = compile_end - compile_start
+    #     bind_time = bind_end - compile_end
+    #     wrapper_time = wrapper_end - bind_end
 
-        if flag_print_debug:
-            print(
-                f"[triton-dejavu] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
-            )
+    #     if flag_print_debug:
+    #         print(
+    #             f"[triton-dejavu] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
+    #         )
 
-        return compiled_kernel
+    #     return compiled_kernel
 
 
 def jitcache(
