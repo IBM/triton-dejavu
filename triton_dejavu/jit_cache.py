@@ -213,6 +213,12 @@ class JitCache(KernelInterface):
             for key in self.check_keys:
                 assert type(kwargs[key]) in [int, bool, float]
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
+            if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
+                # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
+                print(
+                    "[triton-dejavu] WARNING: Kernel variant already cached, will override. "
+                    "This could mean that the given check_keys are ambigous (or the same call was already executed)."
+                )
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
         # TODO: if the cache index is not present, it will create an exception
