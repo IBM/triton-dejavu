@@ -216,14 +216,22 @@ class JitCache(KernelInterface):
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
                 # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
                 print(
-                    "[triton-dejavu] WARNING: Kernel variant already cached, will override. "
+                    "[triton-dejavu:JitCache] WARNING: Kernel variant already cached, will override. "
                     "This could mean that the given check_keys are ambigous (or the same call was already executed)."
                 )
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
         # TODO: if the cache index is not present, it will create an exception
         #  should we instead then compile it?
-        kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
+        try:
+            kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
+        except KeyError as e:
+            print(
+                f"[triton-dejavu:JitCache] ERROR: Key {self.cache_index_func(kwargs)}  not in cache.\n"
+                f"Current cache: {list(self.kernel_cache.keys())}"
+            )
+            print(e)
+            raise e
 
         return kernel_variant(*args, **kwargs)
 
