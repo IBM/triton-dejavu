@@ -132,6 +132,11 @@ class JitCache(KernelInterface):
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
         self.cache_lock = cache_lock
+        self.dynamic_mode = False
+        self.run = self._run_static
+        if self.cache_lock is None:
+            self.dynamic_mode = True
+            self.run = self._run_dynamic
         self.check_keys = check_keys
         self.kernel_cache = {}
 
@@ -200,7 +205,7 @@ class JitCache(KernelInterface):
 
         return prepared_kernel
 
-    def run(self, *args, **kwargs):
+    def _run_static(self, *args, **kwargs):
         # we only support kwargs
         assert len(args) == 0
         # assert no config pre-hook
@@ -232,6 +237,34 @@ class JitCache(KernelInterface):
             )
             print(e)
             raise e
+
+        return kernel_variant(*args, **kwargs)
+
+    def _run_dynamic(self, *args, **kwargs):
+        # we only support kwargs
+        assert len(args) == 0
+        # assert no config pre-hook
+        assert "pre_hook" not in kwargs or kwargs["pre_hook"] is None
+
+        try:
+            kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
+        except KeyError as e:
+            if flag_print_debug:
+                print(
+                    f"[triton-dejavu:JitCache] Key {self.cache_index_func(kwargs)}  not in cache, compiling...\n"
+                    f"Current cache: {list(self.kernel_cache.keys())}"
+                )
+            # we only support int, bool, float as cache index
+            for key in self.check_keys:
+                assert type(kwargs[key]) in [int, bool, float]
+            kernel_variant = self._get_prepared_kernel(*args, **kwargs)
+            if kernel_variant.get_key() in self.kernel_cache and flag_print_debug:
+                # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
+                print(
+                    "[triton-dejavu:JitCache] WARNING: Kernel variant already cached, will override. "
+                    "This could mean that the given check_keys are ambigous (or the same call was already executed)."
+                )
+            self.kernel_cache[kernel_variant.get_key()] = kernel_variant
 
         return kernel_variant(*args, **kwargs)
 
