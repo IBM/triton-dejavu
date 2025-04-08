@@ -60,7 +60,7 @@ global_cache_lock = CacheLock("global")
 class PreparedKernel:
     def __init__(
         self,
-        grid,
+        grid_obj,
         grid_example,
         cache_launch_grid,
         kernel,
@@ -72,12 +72,18 @@ class PreparedKernel:
         device,
         stream,
     ):
-        self.grid_obj = grid
-        self.grid_is_callable = callable(grid)
-        self.grid_size = len(grid_example)
+        self.grid_obj = grid_obj
+        self.grid_is_callable = callable(grid_obj)
+        self.grid_size = len(
+            grid_example
+        )  # grid_example is always not callable, so we need both
         self.cache_launch_grid = cache_launch_grid
+        self.concrete_grid = None
         if cache_launch_grid:
-            self.grid_obj = grid_example
+            grid_0 = grid_example[0]
+            grid_1 = grid_example[1] if self.grid_size > 1 else 1
+            grid_2 = grid_example[2] if self.grid_size > 2 else 1
+            self.concrete_grid = (grid_0, grid_1, grid_2)
         self.kernel = kernel
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
@@ -90,6 +96,8 @@ class PreparedKernel:
             print(f"grid is callable: {self.grid_is_callable}")
             # print("launch metadata")
             # print(self.launch_metadata)
+            if cache_launch_grid:
+                print(f"cached grid: {self.concrete_grid}")
 
         self.cache_key = cache_key
         # TODO: safe to cache?
@@ -104,30 +112,9 @@ class PreparedKernel:
         for arg_n in self.non_const_arg_names:
             non_constsexpr_vals.append(kwargs[arg_n])
 
-        # # grid can't be cached
-        # # if callable(kwargs["grid"]):
-        # if self.grid_is_callable:
-        #     # grid = kwargs["grid"](kwargs)
-        #     grid = self.grid_obj(kwargs)
-        # else:
-        #     # grid = kwargs["grid"]
-        #     grid = self.grid_obj
-        # # if callable(self.grid_obj):
-        # #     grid = self.grid_obj(kwargs)
-        # # else:
-        # #     grid = self.grid_obj
-        # grid_size = len(grid)
-        # # TODO: use self.grid_size? check/assert if the same?
-        # grid_0 = grid[0]
-        # grid_1 = grid[1] if grid_size > 1 else 1
-        # grid_2 = grid[2] if grid_size > 2 else 1
-        
         if self.cache_launch_grid:
-            grid = self.grid_obj
-            grid_0 = grid[0]
-            grid_1 = grid[1] if self.grid_size > 1 else 1
-            grid_2 = grid[2] if self.grid_size > 2 else 1
-        else:  
+            grid_0, grid_1, grid_2 = self.concrete_grid
+        else:
             if self.grid_is_callable:
                 grid = kwargs["grid"](kwargs)
             else:
@@ -163,7 +150,7 @@ class JitCache(KernelInterface):
         arg_names,
         check_keys,
         cache_lock: CacheLock,
-        cache_launch_grid = False,
+        cache_launch_grid=False,
     ):
         assert 3.0 <= triton_version_float <= 3.2
         self.arg_names = arg_names
@@ -255,7 +242,6 @@ class JitCache(KernelInterface):
         assert "pre_hook" not in kwargs or kwargs["pre_hook"] is None
 
         # print(f"my lock: {self.cache_lock.is_locked}")
-        # TODO ?: or len(self.kernel_cache) == 0:
         if not self.cache_lock.is_locked:
             # we only support int, bool, float as cache index
             for key in self.check_keys:
@@ -269,8 +255,6 @@ class JitCache(KernelInterface):
                 )
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
-        # TODO: if the cache index is not present, it will create an exception
-        #  should we instead then compile it?
         try:
             kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
         except KeyError as e:
