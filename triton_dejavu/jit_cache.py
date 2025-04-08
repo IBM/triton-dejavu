@@ -60,7 +60,9 @@ global_cache_lock = CacheLock("global")
 class PreparedKernel:
     def __init__(
         self,
-        # grid,
+        grid,
+        grid_example,
+        cache_launch_grid,
         kernel,
         launch_metadata,
         launch_enter_hook,
@@ -70,14 +72,24 @@ class PreparedKernel:
         device,
         stream,
     ):
-        # self.grid_obj = grid
+        self.grid_obj = grid
+        self.grid_is_callable = callable(grid)
+        self.grid_size = len(grid_example)
+        self.cache_launch_grid = cache_launch_grid
+        if cache_launch_grid:
+            self.grid_obj = grid_example
         self.kernel = kernel
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
         self.non_const_arg_names = non_const_arg_names
+
         if flag_print_debug_verbose:
+            print("arguments that will be updated:")
             print(self.non_const_arg_names)
+            print(f"grid is callable: {self.grid_is_callable}")
+            # print("launch metadata")
+            # print(self.launch_metadata)
 
         self.cache_key = cache_key
         # TODO: safe to cache?
@@ -92,19 +104,39 @@ class PreparedKernel:
         for arg_n in self.non_const_arg_names:
             non_constsexpr_vals.append(kwargs[arg_n])
 
-        # grid can't be cached
-        if callable(kwargs["grid"]):
-            grid = kwargs["grid"](kwargs)
-        else:
-            grid = kwargs["grid"]
-        # if callable(self.grid_obj):
+        # # grid can't be cached
+        # # if callable(kwargs["grid"]):
+        # if self.grid_is_callable:
+        #     # grid = kwargs["grid"](kwargs)
         #     grid = self.grid_obj(kwargs)
         # else:
+        #     # grid = kwargs["grid"]
         #     grid = self.grid_obj
-        grid_size = len(grid)
-        grid_0 = grid[0]
-        grid_1 = grid[1] if grid_size > 1 else 1
-        grid_2 = grid[2] if grid_size > 2 else 1
+        # # if callable(self.grid_obj):
+        # #     grid = self.grid_obj(kwargs)
+        # # else:
+        # #     grid = self.grid_obj
+        # grid_size = len(grid)
+        # # TODO: use self.grid_size? check/assert if the same?
+        # grid_0 = grid[0]
+        # grid_1 = grid[1] if grid_size > 1 else 1
+        # grid_2 = grid[2] if grid_size > 2 else 1
+        
+        if self.cache_launch_grid:
+            grid = self.grid_obj
+            grid_0 = grid[0]
+            grid_1 = grid[1] if self.grid_size > 1 else 1
+            grid_2 = grid[2] if self.grid_size > 2 else 1
+        else:  
+            if self.grid_is_callable:
+                grid = kwargs["grid"](kwargs)
+            else:
+                grid = kwargs["grid"]
+            grid_size = len(grid)
+            # TODO: use self.grid_size? check/assert if the same?
+            grid_0 = grid[0]
+            grid_1 = grid[1] if grid_size > 1 else 1
+            grid_2 = grid[2] if grid_size > 2 else 1
 
         return self.kernel.run(
             grid_0,
@@ -129,8 +161,9 @@ class JitCache(KernelInterface):
         self,
         fn,
         arg_names,
-        cache_lock: CacheLock,
         check_keys,
+        cache_lock: CacheLock,
+        cache_launch_grid = False,
     ):
         assert 3.0 <= triton_version_float <= 3.2
         self.arg_names = arg_names
@@ -139,6 +172,7 @@ class JitCache(KernelInterface):
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
         self.cache_lock = cache_lock
+        self.cache_launch_grid = cache_launch_grid
         self.dynamic_mode = False
         self.run = self._run_static
         if self.cache_lock is None:
@@ -189,7 +223,9 @@ class JitCache(KernelInterface):
         launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
         prepared_kernel = PreparedKernel(
-            # grid,
+            kwargs["grid"],
+            grid,
+            self.cache_launch_grid,
             kernel,
             launch_metadata,
             self.fn.CompiledKernel.launch_enter_hook,
@@ -277,24 +313,28 @@ class JitCache(KernelInterface):
 
 
 def jitcache(
-    cache_lock,
     check_keys,
+    cache_lock=None,
+    cache_launch_grid=False,
 ):
     """
     Decorator for caching a :code:`triton.jit`'d function.
 
-    :param cache_lock: The CacheLock used for this JitCache.
-    :type cache_lock: CacheLock
     :param check_keys: The list of tl.constexpr that are used to index the cache. Only types int, bool, float are supported.
     :type check_keys: list[str]
+    :param cache_lock: The CacheLock used for this JitCache.
+    :type cache_lock: CacheLock
+    :param chache_launch_grid: Indicate if the launch grid size is static and should be cached (False by default).
+    :type cache_launch_grid: bool
     """
 
     def decorator(fn):
         return JitCache(
             fn,
             fn.arg_names,
-            cache_lock,
             check_keys,
+            cache_lock,
+            cache_launch_grid,
         )
 
     return decorator
