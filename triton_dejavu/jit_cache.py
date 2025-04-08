@@ -60,7 +60,7 @@ global_cache_lock = CacheLock("global")
 class PreparedKernel:
     def __init__(
         self,
-        grid,
+        # grid,
         kernel,
         launch_metadata,
         launch_enter_hook,
@@ -70,12 +70,14 @@ class PreparedKernel:
         device,
         stream,
     ):
-        self.grid_obj = grid
+        # self.grid_obj = grid
         self.kernel = kernel
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
         self.non_const_arg_names = non_const_arg_names
+        if flag_print_debug_verbose:
+            print(self.non_const_arg_names)
 
         self.cache_key = cache_key
         # TODO: safe to cache?
@@ -90,10 +92,15 @@ class PreparedKernel:
         for arg_n in self.non_const_arg_names:
             non_constsexpr_vals.append(kwargs[arg_n])
 
-        if callable(self.grid_obj):
-            grid = self.grid_obj(kwargs)
+        # grid can't be cached
+        if callable(kwargs["grid"]):
+            grid = kwargs["grid"](kwargs)
         else:
-            grid = self.grid_obj
+            grid = kwargs["grid"]
+        # if callable(self.grid_obj):
+        #     grid = self.grid_obj(kwargs)
+        # else:
+        #     grid = self.grid_obj
         grid_size = len(grid)
         grid_0 = grid[0]
         grid_1 = grid[1] if grid_size > 1 else 1
@@ -182,7 +189,7 @@ class JitCache(KernelInterface):
         launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
         prepared_kernel = PreparedKernel(
-            grid,
+            # grid,
             kernel,
             launch_metadata,
             self.fn.CompiledKernel.launch_enter_hook,
