@@ -109,19 +109,29 @@ class PreparedKernel:
 
     def _init_handles(self):
         """
-        more or less redo what CompiledKernel._init_hanles is doing 
+        more or less redo what CompiledKernel._init_hanles is doing
         (c.f. triton/python/triton/runtime/compiler.py:379)
         """
         self.run = driver.active.launcher_cls(self.kernel.src, self.kernel.metadata)
-        # check ones and not again
-        self.dev_max_shared = driver.active.utils.get_device_properties(self.device)["max_shared_mem"]
+        # check once and not again
+        self.dev_max_shared = driver.active.utils.get_device_properties(self.device)[
+            "max_shared_mem"
+        ]
         if self.kernel.metadata.shared > self.dev_max_shared:
-            raise OutOfResources(self.metadata.shared, self.dev_max_shared, "shared memory")
+            raise OutOfResources(
+                self.metadata.shared, self.dev_max_shared, "shared memory"
+            )
         # TODO: n_regs, n_spills should be metadata generated when calling `ptxas`
-        self.module, self.function, self.n_regs, self.n_spills = driver.active.utils.load_binary(
-            self.kernel.name, self.kernel.kernel, self.kernel.metadata.shared, self.device)
+        self.module, self.function, self.n_regs, self.n_spills = (
+            driver.active.utils.load_binary(
+                self.kernel.name,
+                self.kernel.kernel,
+                self.kernel.metadata.shared,
+                self.device,
+            )
+        )
         if flag_print_debug_verbose:
-            print(f"kernel initalized: {self.n_regs}, {self.n_spills}")
+            print(f"kernel initalized: {self.n_regs}, {self.n_spills}, {self.function}")
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
@@ -139,23 +149,9 @@ class PreparedKernel:
             else:
                 grid = kwargs["grid"]
             grid_size = len(grid)
-            # TODO: use self.grid_size? check/assert if the same?
             grid_0 = grid[0]
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
-
-        # return self.kernel.run(
-        #     grid_0,
-        #     grid_1,
-        #     grid_2,
-        #     self.stream,
-        #     self.kernel.function,
-        #     self.kernel.packed_metadata,
-        #     self.launch_metadata,
-        #     self.launch_enter_hook,
-        #     self.launch_exit_hook,
-        #     *non_constsexpr_vals,
-        # )
 
         return self.run(
             grid_0,
@@ -210,7 +206,7 @@ class JitCache(KernelInterface):
 
     def _get_prepared_kernel(self, *args, **kwargs) -> PreparedKernel:
         """
-        more or less redo what JITFunction.run is doing 
+        more or less redo what JITFunction.run is doing
         (c.f. triton/python/triton/runtime/jit.py:565)
         """
 
