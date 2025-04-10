@@ -3,11 +3,13 @@ Triton Deja-vu
 Framework to reduce autotune overhead of [triton-lang](https://github.com/triton-lang/triton) to zero for well known deployments.
 
 This small framework is based on the [Triton autotuner](https://github.com/triton-lang/triton/blob/main/python/triton/runtime/autotuner.py) and contributes three features to the Triton community:
-1. Store and safely restore autotuner states using JSON files. 
+1. Store and safely restore autotuner states using JSON files.
 2. `ConfigSpaces` to explore a defined space exhaustively.
 3. Bayesian Optimization to speed up the autotuning process.
 
-Additionally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features). 
+Additionally, it allows to use heuristics in combination with the autotuner. Please find more details in the [feature section below](#features).
+
+Besides improvements for autotuning, it also contains useful tools in working with triton, specifically a [cache for JIT-artifacts](#jitcache).
 
 
 Installation
@@ -31,7 +33,7 @@ import triton_dejavu
 @triton_dejavu.autotune(
     ...
 ```
-Second, the environment variable `TRITON_DEJAVU_STORAGE` needs to be set and point to a read and writable directory. 
+Second, the environment variable `TRITON_DEJAVU_STORAGE` needs to be set and point to a read and writable directory.
 
 
 To use the `ConfigSpaces` feature, replace the `config` parameter for the triton_dejavu autotuner with  `config_space` definition:
@@ -90,7 +92,7 @@ So far, we think that the above listed combination determines the applicability 
 
 In addition, users can define a tag to be used by the dejavu storage to be able to differentiate different deployment scenarios (for otherwise identical value combinations).
 
-Please note, the above list does not include features that do not influence the decision of the autotuner, but influence the behaviour of the kernel or the JIT. For example, the precense or details of `pre_hook` or `post_hook` and also other [`specialization_data`](https://github.com/triton-lang/triton/blob/e87f877eb94efeaeb4ad8697f315932121dec5e0/python/triton/runtime/jit.py#L514) used by the JIT cache are not used by triton-dejavu. 
+Please note, the above list does not include features that do not influence the decision of the autotuner, but influence the behaviour of the kernel or the JIT. For example, the presence or details of `pre_hook` or `post_hook` and also other [`specialization_data`](https://github.com/triton-lang/triton/blob/e87f877eb94efeaeb4ad8697f315932121dec5e0/python/triton/runtime/jit.py#L514) used by the JIT cache are not used by triton-dejavu. 
 
 
 #### Example
@@ -184,6 +186,30 @@ For the BO search, triton-dejavu depends on the [SMAC library](https://github.co
 pip install "triton-dejavu[BO] @ file:./triton-dejavu"
 ```
 Please note that smac depends on [swig](https://www.swig.org), which need to be installed first.
+
+
+### JITCache
+
+The launch overhead of triton kernels is a well known problem (see e.g. [1](https://github.com/triton-lang/triton/pull/3503), [2](https://github.com/triton-lang/triton/issues/2637), [3](https://github.com/triton-lang/triton/issues/6064)). Parts of the launch overhead comes from the fact that the triton JIT checks very carefully if an existing binary is safe to use.
+
+In many scenarios, these checks can be relaxed. Such a cache with relaxed checks is implemented by `triton_dejavu.jitcache`. It is implemented as a decorator that could be used in front of the `triton.jit` decorator:
+
+```
+@triton_dejavu.jitcache(
+    check_keys=["x", "BLOCK_SIZE", "USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
+)
+@triton.jit
+def kernel_paged_attention_...
+```
+
+The required `check_keys` argument must provide a list of the kernel parameters marked as `tl.constexpr` that **must be checked** to select the correct kernel binary. Ideally, this is just a subset of all constant kernel parameters.
+For example, if we have two constant parameters A and B, but we know that A never will change in a particular application, but B will, then the list should look like `check_keys=["A"]`.
+
+Consequently, *the usage of `triton_dejavu.jitcache` is application specific* (and also *experimental*).
+
+Additionally, a user could provide a lock with e.g. `cache_lock=triton_dejavu.global_cache_lock` to ensure that no re-compilation happens after the cache lock is locked.
+
+The `triton_dejavu.jitcache` reduces the launch overhead of triton kernels to 30-40 micro-seconds.
 
 
 Compatibility
