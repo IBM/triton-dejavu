@@ -37,6 +37,8 @@ from triton_dejavu.dejavu_utilities import (
     flag_print_debug_verbose,
 )
 
+__print_name__ = "triton-dejavu"
+
 
 class CacheLock:
 
@@ -47,12 +49,12 @@ class CacheLock:
     def lock(self):
         self.is_locked = True
         if flag_print_debug_verbose:
-            print(f"[triton-dejavu] JitCache lock '{self.id}' is LOCKED.")
+            print(f"[{__print_name__}] JitCache lock '{self.id}' is LOCKED.")
 
     def unlock(self):
         self.is_locked = False
         if flag_print_debug_verbose:
-            print(f"[triton-dejavu] JitCache lock '{self.id}' is UNLOCKED.")
+            print(f"[{__print_name__}] JitCache lock '{self.id}' is UNLOCKED.")
 
 
 global_cache_lock = CacheLock("global")
@@ -203,6 +205,8 @@ class JitCache(KernelInterface):
             return cache_key
 
         self.cache_index_func = calc_cache_index
+        if len(check_keys) == 0:
+            self.cache_index_func = lambda ignore: "_default_"
 
     def _get_prepared_kernel(self, *args, **kwargs) -> PreparedKernel:
         """
@@ -222,6 +226,10 @@ class JitCache(KernelInterface):
                 const_arg_names.append(p.name)
             else:
                 non_const_arg_names.append(p.name)
+        if any(x in self.check_keys for x in non_const_arg_names):
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: check_keys must only contain parameters marked as tl.constexpr (non-constants will be updated in all cases)."
+            )
 
         (
             bound_args,
@@ -262,14 +270,17 @@ class JitCache(KernelInterface):
 
         if flag_print_debug:
             print(
-                f"[triton-dejavu] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
+                f"[{__print_name__}] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
             )
 
         return prepared_kernel
 
     def _run_static(self, *args, **kwargs):
         # we only support kwargs
-        assert len(args) == 0
+        if len(args) != 0:
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: The JITCache only supports kwargs, len(args) must be 0."
+            )
         # assert no config pre-hook
         assert "pre_hook" not in kwargs or kwargs["pre_hook"] is None
 
@@ -282,8 +293,8 @@ class JitCache(KernelInterface):
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
                 # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
                 print(
-                    "[triton-dejavu:JitCache] WARNING: Kernel variant already cached, will override. "
-                    "This could mean that the given check_keys are ambigous (or the same call was already executed)."
+                    f"[{__print_name__}:JitCache] WARNING: Kernel variant already cached, will override (cache lock is not locked). "
+                    f"This could mean that the given check_keys are ambigous (or the same call was already executed)."
                 )
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
@@ -291,7 +302,7 @@ class JitCache(KernelInterface):
             kernel_variant = self.kernel_cache[self.cache_index_func(kwargs)]
         except KeyError as e:
             print(
-                f"[triton-dejavu:JitCache] ERROR: Key {self.cache_index_func(kwargs)}  not in cache.\n"
+                f"[{__print_name__}:JitCache] ERROR: Key {self.cache_index_func(kwargs)}  not in cache.\n"
                 f"Current cache: {list(self.kernel_cache.keys())}"
             )
             print(e)
@@ -301,7 +312,10 @@ class JitCache(KernelInterface):
 
     def _run_dynamic(self, *args, **kwargs):
         # we only support kwargs
-        assert len(args) == 0
+        if len(args) != 0:
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: The JITCache only supports kwargs, len(args) must be 0."
+            )
         # assert no config pre-hook
         assert "pre_hook" not in kwargs or kwargs["pre_hook"] is None
 
@@ -310,19 +324,13 @@ class JitCache(KernelInterface):
         except KeyError as e:
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu:JitCache] Key {self.cache_index_func(kwargs)}  not in cache, compiling...\n"
+                    f"[{__print_name__}:JitCache] Key {self.cache_index_func(kwargs)}  not in cache, compiling...\n"
                     f"Current cache: {list(self.kernel_cache.keys())}"
                 )
             # we only support int, bool, float as cache index
             for key in self.check_keys:
                 assert type(kwargs[key]) in [int, bool, float]
             kernel_variant = self._get_prepared_kernel(*args, **kwargs)
-            if kernel_variant.get_key() in self.kernel_cache and flag_print_debug:
-                # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
-                print(
-                    "[triton-dejavu:JitCache] WARNING: Kernel variant already cached, will override. "
-                    "This could mean that the given check_keys are ambigous (or the same call was already executed)."
-                )
             self.kernel_cache[kernel_variant.get_key()] = kernel_variant
 
         return kernel_variant(*args, **kwargs)
