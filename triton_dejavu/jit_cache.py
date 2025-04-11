@@ -93,9 +93,7 @@ class PreparedKernel:
         self.launch_exit_hook = launch_exit_hook
         self.non_const_arg_names = non_const_arg_names
 
-        # TODO: safe to cache?
         self.device = device
-        self.stream = stream
         self._init_handles()
 
         if flag_print_debug_verbose:
@@ -123,7 +121,6 @@ class PreparedKernel:
             raise OutOfResources(
                 self.metadata.shared, self.dev_max_shared, "shared memory"
             )
-        # TODO: n_regs, n_spills should be metadata generated when calling `ptxas`
         self.module, self.function, self.n_regs, self.n_spills = (
             driver.active.utils.load_binary(
                 self.kernel.name,
@@ -154,12 +151,14 @@ class PreparedKernel:
             grid_0 = grid[0]
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
+                
+        stream = driver.active.get_current_stream(self.device)
 
         return self.run(
             grid_0,
             grid_1,
             grid_2,
-            self.stream,
+            stream,
             self.function,
             self.kernel.packed_metadata,
             self.launch_metadata,
