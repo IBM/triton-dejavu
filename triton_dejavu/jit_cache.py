@@ -99,7 +99,7 @@ class PreparedKernel:
         for i, arg_n in enumerate(self.non_const_arg_names):
             if arg_n in update_only_arg_names:
                 self.update_args_index[arg_n] = i
-                self.non_const_vals_lst.append('dummy_value')
+                self.non_const_vals_lst.append("dummy_value")
             else:
                 self.non_const_vals_lst.append(assume_const_vals_dict[arg_n])
 
@@ -163,7 +163,7 @@ class PreparedKernel:
             grid_0 = grid[0]
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
-                
+
         stream = driver.active.get_current_stream(self.device)
 
         return self.run(
@@ -244,14 +244,22 @@ class JitCache(KernelInterface):
             raise RuntimeError(
                 f"[{__print_name__}] ERROR: check_keys must only contain"
                 "parameters marked as tl.constexpr (non-constants will be "
-                "updated in all cases).")
+                "updated in all cases)."
+            )
         if self.assume_const:
             if any(x in self.assume_const for x in const_arg_names):
                 raise RuntimeError(
                     f"[{__print_name__}] ERROR: assume_const must only contain"
-                    "parameters NOT marked as tl.constexpr.")
-            update_only_arg_names = [arg_n for arg_n in non_const_arg_names if arg_n not in self.assume_const]
-            assume_const_vals_dict = {arg_n: kwargs[arg_n] for arg_n in non_const_arg_names if arg_n in self.assume_const}
+                    "parameters NOT marked as tl.constexpr."
+                )
+            update_only_arg_names = [
+                arg_n for arg_n in non_const_arg_names if arg_n not in self.assume_const
+            ]
+            assume_const_vals_dict = {
+                arg_n: kwargs[arg_n]
+                for arg_n in non_const_arg_names
+                if arg_n in self.assume_const
+            }
         else:
             update_only_arg_names = non_const_arg_names
             assume_const_vals_dict = {}
@@ -314,7 +322,12 @@ class JitCache(KernelInterface):
         if not self.cache_lock.is_locked:
             # we only support int, bool, float as cache index
             for key in self.check_keys:
-                assert type(kwargs[key]) in [int, bool, float]
+                if type(kwargs[key]) not in [int, bool, float, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_key {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int, bool float."
+                    )
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
                 # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
@@ -355,7 +368,12 @@ class JitCache(KernelInterface):
                 )
             # we only support int, bool, float as cache index
             for key in self.check_keys:
-                assert type(kwargs[key]) in [int, bool, float]
+                if type(kwargs[key]) not in [int, bool, float, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_key {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int, bool float."
+                    )
             kernel_variant = self._get_prepared_kernel(*args, **kwargs)
             self.kernel_cache[kernel_variant.get_key()] = kernel_variant
 
