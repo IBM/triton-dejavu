@@ -377,6 +377,9 @@ class Autotuner(KernelInterface):
             self._update_triton_cache_path()
             set_triton_cache_manager()
         self._start_time = time.time()
+        # import json
+        # with open('/results/configs.lst', 'w') as f:
+        #     json.dump([str(c) for c in self.configs], f)
 
     def _get_param_hash(self):
         hs = f"autotuner params: warmup {self.warmup_t} rep {self.rep_t} cuda_graphs {self.use_cuda_graph} quantiles {self.quantiles}"
