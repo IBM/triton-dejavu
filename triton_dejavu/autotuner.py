@@ -384,7 +384,7 @@ class Autotuner(KernelInterface):
         if os.getenv("TRITON_DEJAVU_HASH_SEARCH_PARAMS", "1") == "1":
             hs += f" use_bo {self.use_bo} use_random {self.use_random_search} max_search_n {self.search_max_n_trials} max_search_t {self.max_search_time_s}"
         # TODO: how to hash the custom hooks?
-        #  inspect cant find it, possible would be str(inspect.Signature().from_callable(self.pre_hook))
+        #  inspect can't find it, possible would be str(inspect.Signature().from_callable(self.pre_hook))
         #  maybe not relevant since should not influence the autotuner result
         h = get_string_hash(hs)
         return h
@@ -430,7 +430,7 @@ class Autotuner(KernelInterface):
                 **current,
             )
             # NOTE: if a config.pre_hook exists, it will be executed in the parent process
-            #  but with already cloned arges (not possible to pickle an unbound kernel)
+            #  but with already cloned args (not possible to pickle an unbound kernel)
             bench_res = do_bench(
                 kernel_call_obj,
                 use_cuda_graphs=self.use_cuda_graph,
@@ -698,7 +698,7 @@ class Autotuner(KernelInterface):
                 **kwargs,
             )
         else:
-            # FIXME: this could assing the wrong argument to the wrong name if autotuner args are not last!
+            # FIXME: this could assign the wrong argument to the wrong name if autotuner args are not last!
             self.nargs = dict(zip(self.arg_names, args))
             used_cached_result = True
             self.bench_time = 0.0
@@ -953,7 +953,7 @@ def autotune(
     :type search_max_repeat: int
     :param quantiles: 3-tuple for the quantiles that are reported of the evaluation function, e.g. (0.5, 0.2, 0.8).
                         Default is `None` which will lead to the median (0.5 quantile).
-    :param metadata_key: String to store the found configration as metadata in the triton_dejavu.utils.global_metadata_store.
+    :param metadata_key: String to store the found configuration as metadata in the triton_dejavu.utils.global_metadata_store.
                          This could be used in combination with metadata_fn and proton.
     :type metadata_key: str
     :param custom_data_storage: Absolute path to a custom triton-dejavu data location for this function.
@@ -994,7 +994,7 @@ def autotune(
 class ConfigSpace:
     """
     An object to represent the space of possible kernel configurations for the auto-tuner to evaluate.
-    At the initalization of the autotuner, a list of all possible and valid configurations is generated
+    At the initialization of the autotuner, a list of all possible and valid configurations is generated
     and passed to the autotuner.
 
     Please note that some of the configuration parameters depend on the used triton config.

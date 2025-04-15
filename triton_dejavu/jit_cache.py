@@ -140,7 +140,9 @@ class PreparedKernel:
             )
         )
         if flag_print_debug_verbose:
-            print(f"kernel initalized: {self.n_regs}, {self.n_spills}, {self.function}")
+            print(
+                f"kernel initialized: {self.n_regs}, {self.n_spills}, {self.function}"
+            )
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
@@ -330,7 +332,6 @@ class JitCache(KernelInterface):
                     )
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
-                # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
                 print(
                     f"[{__print_name__}:JitCache] WARNING: Kernel variant already cached, will override (cache lock is not locked). "
                     f"This could mean that the given check_keys are ambiguous (or the same call was already executed)."

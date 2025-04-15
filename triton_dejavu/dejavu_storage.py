@@ -263,7 +263,7 @@ class DejavuStorage:
         for key, config in cache.items():
             if str(key) in cache_json["cache"]:
                 continue
-            # compatability with cuda stream feature of triton 3
+            # compatibility with cuda stream feature of triton 3
             vals = timings[key]
             if type(vals) is not list:
                 vals = [vals]
