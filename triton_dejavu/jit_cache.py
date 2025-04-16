@@ -42,7 +42,7 @@ __print_name__ = "triton-dejavu"
 
 class CacheLock:
 
-    def __init__(self, id="unkown"):
+    def __init__(self, id="unknown"):
         self.is_locked = False
         self.id = id
 
@@ -71,9 +71,10 @@ class PreparedKernel:
         launch_enter_hook,
         launch_exit_hook,
         non_const_arg_names,
+        assume_const_vals_dict,
+        update_only_arg_names,
         cache_key,
         device,
-        stream,
     ):
         self.grid_obj = grid_obj
         self.grid_is_callable = callable(grid_obj)
@@ -91,11 +92,18 @@ class PreparedKernel:
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
-        self.non_const_arg_names = non_const_arg_names
 
-        # TODO: safe to cache?
+        self.non_const_arg_names = non_const_arg_names
+        self.non_const_vals_lst = []
+        self.update_args_index = {}
+        for i, arg_n in enumerate(self.non_const_arg_names):
+            if arg_n in update_only_arg_names:
+                self.update_args_index[arg_n] = i
+                self.non_const_vals_lst.append("dummy_value")
+            else:
+                self.non_const_vals_lst.append(assume_const_vals_dict[arg_n])
+
         self.device = device
-        self.stream = stream
         self._init_handles()
 
         if flag_print_debug_verbose:
@@ -123,7 +131,6 @@ class PreparedKernel:
             raise OutOfResources(
                 self.metadata.shared, self.dev_max_shared, "shared memory"
             )
-        # TODO: n_regs, n_spills should be metadata generated when calling `ptxas`
         self.module, self.function, self.n_regs, self.n_spills = (
             driver.active.utils.load_binary(
                 self.kernel.name,
@@ -133,15 +140,19 @@ class PreparedKernel:
             )
         )
         if flag_print_debug_verbose:
-            print(f"kernel initalized: {self.n_regs}, {self.n_spills}, {self.function}")
+            print(
+                f"kernel initialized: {self.n_regs}, {self.n_spills}, {self.function}"
+            )
 
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
 
-        non_constsexpr_vals = []
-        # order is always the same...
-        for arg_n in self.non_const_arg_names:
-            non_constsexpr_vals.append(kwargs[arg_n])
+        # non_constsexpr_vals = []
+        # # order is always the same...
+        # for arg_n in self.non_const_arg_names:
+        #     non_constsexpr_vals.append(kwargs[arg_n])
+        for arg_n, idx in self.update_args_index.items():
+            self.non_const_vals_lst[idx] = kwargs[arg_n]
 
         if self.cache_launch_grid:
             grid_0, grid_1, grid_2 = self.concrete_grid
@@ -155,17 +166,20 @@ class PreparedKernel:
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
 
+        stream = driver.active.get_current_stream(self.device)
+
         return self.run(
             grid_0,
             grid_1,
             grid_2,
-            self.stream,
+            stream,
             self.function,
             self.kernel.packed_metadata,
             self.launch_metadata,
             self.launch_enter_hook,
             self.launch_exit_hook,
-            *non_constsexpr_vals,
+            # *non_constsexpr_vals,
+            *self.non_const_vals_lst,
         )
 
     def get_key(self):
@@ -181,6 +195,7 @@ class JitCache(KernelInterface):
         check_keys,
         cache_lock: CacheLock,
         cache_launch_grid=False,
+        assume_const=None,
     ):
         assert 3.0 <= triton_version_float <= 3.2
         self.arg_names = arg_names
@@ -196,6 +211,7 @@ class JitCache(KernelInterface):
             self.dynamic_mode = True
             self.run = self._run_dynamic
         self.check_keys = check_keys
+        self.assume_const = assume_const
         self.kernel_cache = {}
 
         def calc_cache_index(kwargs):
@@ -228,8 +244,27 @@ class JitCache(KernelInterface):
                 non_const_arg_names.append(p.name)
         if any(x in self.check_keys for x in non_const_arg_names):
             raise RuntimeError(
-                f"[{__print_name__}] ERROR: check_keys must only contain parameters marked as tl.constexpr (non-constants will be updated in all cases)."
+                f"[{__print_name__}] ERROR: check_keys must only contain"
+                "parameters marked as tl.constexpr (non-constants will be "
+                "updated in all cases)."
             )
+        if self.assume_const:
+            if any(x in self.assume_const for x in const_arg_names):
+                raise RuntimeError(
+                    f"[{__print_name__}] ERROR: assume_const must only contain"
+                    "parameters NOT marked as tl.constexpr."
+                )
+            update_only_arg_names = [
+                arg_n for arg_n in non_const_arg_names if arg_n not in self.assume_const
+            ]
+            assume_const_vals_dict = {
+                arg_n: kwargs[arg_n]
+                for arg_n in non_const_arg_names
+                if arg_n in self.assume_const
+            }
+        else:
+            update_only_arg_names = non_const_arg_names
+            assume_const_vals_dict = {}
 
         (
             bound_args,
@@ -258,9 +293,10 @@ class JitCache(KernelInterface):
             self.fn.CompiledKernel.launch_enter_hook,
             self.fn.CompiledKernel.launch_exit_hook,
             non_const_arg_names,
+            assume_const_vals_dict,
+            update_only_arg_names,
             self.cache_index_func(kwargs),
             device,
-            stream,
         )
 
         wrapper_end = time.time()
@@ -288,13 +324,17 @@ class JitCache(KernelInterface):
         if not self.cache_lock.is_locked:
             # we only support int, bool, float as cache index
             for key in self.check_keys:
-                assert type(kwargs[key]) in [int, bool, float]
+                if type(kwargs[key]) not in [int, bool, float, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_key {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int, bool float."
+                    )
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
-                # raise RuntimeError("Kernel variant already cached. This means the given check_keys are ambigous.")
                 print(
                     f"[{__print_name__}:JitCache] WARNING: Kernel variant already cached, will override (cache lock is not locked). "
-                    f"This could mean that the given check_keys are ambigous (or the same call was already executed)."
+                    f"This could mean that the given check_keys are ambiguous (or the same call was already executed)."
                 )
             self.kernel_cache[prepared_kernel.get_key()] = prepared_kernel
 
@@ -329,7 +369,12 @@ class JitCache(KernelInterface):
                 )
             # we only support int, bool, float as cache index
             for key in self.check_keys:
-                assert type(kwargs[key]) in [int, bool, float]
+                if type(kwargs[key]) not in [int, bool, float, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_key {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int, bool float."
+                    )
             kernel_variant = self._get_prepared_kernel(*args, **kwargs)
             self.kernel_cache[kernel_variant.get_key()] = kernel_variant
 
@@ -340,16 +385,23 @@ def jitcache(
     check_keys,
     cache_lock=None,
     cache_launch_grid=False,
+    assume_const=None,
 ):
     """
     Decorator for caching a :code:`triton.jit`'d function.
 
-    :param check_keys: The list of tl.constexpr that are used to index the cache. Only types int, bool, float are supported.
+    :param check_keys: The list of tl.constexpr that are used to index
+                       the cache. Only types int, bool, float are supported.
     :type check_keys: list[str]
     :param cache_lock: The CacheLock used for this JitCache.
     :type cache_lock: CacheLock
-    :param chache_launch_grid: Indicate if the launch grid size is static and should be cached (False by default).
+    :param chache_launch_grid: Indicate if the launch grid size is static and
+                               should be cached (False by default).
     :type cache_launch_grid: bool
+    :param assume_const: A list of parameters that are NOT marked as
+                         tl.constexpr but should be treated as constants in
+                         this kernel launch.
+    :param assume_const: list[str]
     """
 
     def decorator(fn):
@@ -359,6 +411,7 @@ def jitcache(
             check_keys,
             cache_lock,
             cache_launch_grid,
+            assume_const,
         )
 
     return decorator

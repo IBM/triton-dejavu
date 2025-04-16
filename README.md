@@ -188,7 +188,7 @@ pip install "triton-dejavu[BO] @ file:./triton-dejavu"
 Please note that smac depends on [swig](https://www.swig.org), which need to be installed first.
 
 
-### JITCache
+### `JITCache`
 
 The launch overhead of triton kernels is a well known problem (see e.g. [1](https://github.com/triton-lang/triton/pull/3503), [2](https://github.com/triton-lang/triton/issues/2637), [3](https://github.com/triton-lang/triton/issues/6064)). Parts of the launch overhead comes from the fact that the triton JIT checks very carefully if an existing binary is safe to use.
 
@@ -197,6 +197,7 @@ In many scenarios, these checks can be relaxed. Such a cache with relaxed checks
 ```
 @triton_dejavu.jitcache(
     check_keys=["x", "BLOCK_SIZE", "USE_ALIBI_SLOPES", "SLIDING_WINDOW", "filter_by_query_len"],
+    assume_const=["stride_k_cache_0", "stride_k_cache_1"],
 )
 @triton.jit
 def kernel_paged_attention_...
@@ -209,7 +210,11 @@ Consequently, *the usage of `triton_dejavu.jitcache` is application specific* (a
 
 Additionally, a user could provide a lock with e.g. `cache_lock=triton_dejavu.global_cache_lock` to ensure that no re-compilation happens after the cache lock is locked.
 
-The `triton_dejavu.jitcache` reduces the launch overhead of triton kernels to 30-40 micro-seconds.
+Moreover, the jitcache also supports the caching of the launch grid (`cache_launch_grid=True`) in cases where the launch grid is the same for all kernel invocations. 
+
+Furthermore, the jitcache can treat non-constant arguments as if they would be constants, with the optional `assume_const=[]` parameter, as shown above. This is necessary in situations where some parameters are constant from the application point-of-view, but can't be declared `tl.constexpr`. This is for example the case with 64-bit addresses, which have to use `tl.int64` currently. 
+
+The `triton_dejavu.jitcache` reduces the launch overhead of triton kernels to 20-50 micro-seconds, depending on the number of non-constant (or not assumed constant) arguments. 
 
 
 Compatibility
