@@ -21,6 +21,7 @@ import sys
 import os
 import time
 import inspect
+import copy
 
 from triton import KernelInterface
 from triton.runtime.driver import driver
@@ -160,7 +161,7 @@ class PreparedKernel:
             if self.grid_is_callable:
                 grid = kwargs["grid"](kwargs)
             else:
-                grid = kwargs["grid"]
+                grid = copy.deepcopy(kwargs["grid"])
             grid_size = len(grid)
             grid_0 = grid[0]
             grid_1 = grid[1] if grid_size > 1 else 1
