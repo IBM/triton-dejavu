@@ -173,7 +173,7 @@ If the environment variable `TRITON_PRINT_AUTOTUNING` is set, a log message abou
 ### Bayesian Optimization to speed up autotune process
 
 Triton-dejavu can use [Bayesian Optimization (BO)](https://en.wikipedia.org/wiki/Bayesian_optimization) to speed up the tuning of kernels with very large search spaces. 
-Triton-dejavu also implemented random search, since BO does not always convert quicker. 
+Triton-dejavu also implemented random search, since BO does not always converge quicker. 
 
 Both features can be enabled with additional parameters to `triton_dejavu.autotune()`:
 - `use_bo`: Activate Bayesian Optimization (BO) to speed up autotuner runs (at the expense of allowing some percentage of performance drop of the chosen kernel). This feature can only be used in combination with config_space. Also, prune_configs_by must not be provided.
