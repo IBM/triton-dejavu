@@ -322,7 +322,7 @@ class JitCache(KernelInterface):
         self.arg_names = arg_names
         self.fn = fn
 
-        if os.environ.get('TRITON_DEJAVU_DISABLE_JITCACHE', '0') == '1':
+        if os.environ.get("TRITON_DEJAVU_DISABLE_JITCACHE", "0") == "1":
             # we are deactivated -> do nothing and set self.run
             #  to JitFunction.run
             self.run = fn.run
@@ -351,7 +351,7 @@ class JitCache(KernelInterface):
         self.cache_index_func = calc_cache_index
         if len(check_keys) == 0:
             self.cache_index_func = lambda ignore: "_default_"
-    
+
     def _get_prepared_kernel33(self, *args, **kwargs) -> PreparedKernel33:
         """
         more or less redo what JITFunction.run is doing
@@ -403,8 +403,7 @@ class JitCache(KernelInterface):
             grid = kwargs["grid"]
 
         stream = driver.active.get_current_stream(device)
-        launch_metadata = kernel.launch_metadata(grid, stream,
-                                                 *bound_args.values())
+        launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())
 
         prepared_kernel = PreparedKernel33(
             kwargs["grid"],
