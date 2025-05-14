@@ -61,7 +61,126 @@ class CacheLock:
 global_cache_lock = CacheLock("global")
 
 
-class PreparedKernel:
+class PreparedKernel33:
+    def __init__(
+        self,
+        grid_obj,
+        grid_example,
+        cache_launch_grid,
+        kernel,
+        launch_metadata,
+        launch_enter_hook,
+        launch_exit_hook,
+        update_only_arg_names,
+        bound_args,
+        cache_key,
+        device,
+    ):
+        self.grid_obj = grid_obj
+        self.grid_is_callable = callable(grid_obj)
+        self.grid_size = len(
+            grid_example
+        )  # grid_example is always not callable, so we need both
+        self.cache_launch_grid = cache_launch_grid
+        self.concrete_grid = None
+        if cache_launch_grid:
+            grid_0 = grid_example[0]
+            grid_1 = grid_example[1] if self.grid_size > 1 else 1
+            grid_2 = grid_example[2] if self.grid_size > 2 else 1
+            self.concrete_grid = (grid_0, grid_1, grid_2)
+        self.kernel = kernel
+        self.launch_metadata = launch_metadata
+        self.launch_enter_hook = launch_enter_hook
+        self.launch_exit_hook = launch_exit_hook
+
+        self.arg_list = []
+        self.update_args_index = {}
+        for i, arg_n in enumerate(bound_args.keys()):
+            if arg_n in update_only_arg_names:
+                self.update_args_index[arg_n] = i
+                self.arg_list.append("dummy_value")
+            else:
+                self.arg_list.append(bound_args[arg_n])
+
+        self.device = device
+        self._init_handles()
+
+        if flag_print_debug_verbose:
+            print("arguments that will be updated:")
+            print(self.update_args_index)
+            print(f"grid is callable: {self.grid_is_callable}")
+            # print("launch metadata")
+            # print(self.launch_metadata)
+            if cache_launch_grid:
+                print(f"cached grid: {self.concrete_grid}")
+
+        self.cache_key = cache_key
+
+    def _init_handles(self):
+        """
+        more or less redo what CompiledKernel._init_hanles is doing
+        (c.f. triton/python/triton/runtime/compiler.py:379)
+        """
+        self.run = driver.active.launcher_cls(self.kernel.src, self.kernel.metadata)
+        # check once and not again
+        self.dev_max_shared = driver.active.utils.get_device_properties(self.device)[
+            "max_shared_mem"
+        ]
+        if self.kernel.metadata.shared > self.dev_max_shared:
+            raise OutOfResources(
+                self.metadata.shared, self.dev_max_shared, "shared memory"
+            )
+        self.module, self.function, self.n_regs, self.n_spills = (
+            driver.active.utils.load_binary(
+                self.kernel.name,
+                self.kernel.kernel,
+                self.kernel.metadata.shared,
+                self.device,
+            )
+        )
+        if flag_print_debug_verbose:
+            print(
+                f"kernel initialized: {self.n_regs}, {self.n_spills}, {self.function}"
+            )
+
+    def __call__(self, *args, **kwargs):
+        assert len(args) == 0
+
+        for arg_n, idx in self.update_args_index.items():
+            self.arg_list[idx] = kwargs[arg_n]
+
+        if self.cache_launch_grid:
+            grid_0, grid_1, grid_2 = self.concrete_grid
+        else:
+            if self.grid_is_callable:
+                grid = kwargs["grid"](kwargs)
+            else:
+                grid = copy.deepcopy(kwargs["grid"])
+            grid_size = len(grid)
+            grid_0 = grid[0]
+            grid_1 = grid[1] if grid_size > 1 else 1
+            grid_2 = grid[2] if grid_size > 2 else 1
+
+        stream = driver.active.get_current_stream(self.device)
+
+        return self.run(
+            grid_0,
+            grid_1,
+            grid_2,
+            stream,
+            self.function,
+            self.kernel.packed_metadata,
+            self.launch_metadata,
+            self.launch_enter_hook,
+            self.launch_exit_hook,
+            *self.arg_list,
+        )
+
+    def get_key(self):
+        return self.cache_key
+
+
+class PreparedKernel32:
     def __init__(
         self,
         grid_obj,
@@ -148,10 +267,6 @@ class PreparedKernel:
     def __call__(self, *args, **kwargs):
         assert len(args) == 0
 
-        # non_constsexpr_vals = []
-        # # order is always the same...
-        # for arg_n in self.non_const_arg_names:
-        #     non_constsexpr_vals.append(kwargs[arg_n])
         for arg_n, idx in self.update_args_index.items():
             self.non_const_vals_lst[idx] = kwargs[arg_n]
 
@@ -179,7 +294,6 @@ class PreparedKernel:
             self.launch_metadata,
             self.launch_enter_hook,
             self.launch_exit_hook,
-            # *non_constsexpr_vals,
             *self.non_const_vals_lst,
         )
 
@@ -198,9 +312,22 @@ class JitCache(KernelInterface):
         cache_launch_grid=False,
         assume_const=None,
     ):
-        assert 3.0 <= triton_version_float <= 3.2
+        assert 3.0 <= triton_version_float <= 3.3
+        if triton_version_float <= 3.2:
+            self._get_prepared_kernel = self._get_prepared_kernel32
+        else:
+            self._get_prepared_kernel = self._get_prepared_kernel33
+
+        # do first to support stacking of decorators
         self.arg_names = arg_names
         self.fn = fn
+
+        if os.environ.get('TRITON_DEJAVU_DISABLE_JITCACHE', '0') == '1':
+            # we are deactivated -> do nothing and set self.run
+            #  to JitFunction.run
+            self.run = fn.run
+            return
+
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
@@ -224,8 +351,88 @@ class JitCache(KernelInterface):
         self.cache_index_func = calc_cache_index
         if len(check_keys) == 0:
             self.cache_index_func = lambda ignore: "_default_"
+    
+    def _get_prepared_kernel33(self, *args, **kwargs) -> PreparedKernel33:
+        """
+        more or less redo what JITFunction.run is doing
+        (c.f. triton/python/triton/runtime/jit.py:525)
+        """
 
-    def _get_prepared_kernel(self, *args, **kwargs) -> PreparedKernel:
+        kwargs["warmup"] = True
+        compile_start = time.time()
+        kernel = self.fn.run(*args, **kwargs)
+        compile_end = time.time()
+
+        const_arg_names = []
+        non_const_arg_names = []
+        for p in self.fn.params:
+            if p.is_constexpr or p.is_const:
+                const_arg_names.append(p.name)
+            else:
+                non_const_arg_names.append(p.name)
+        if any(x in self.check_keys for x in non_const_arg_names):
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: check_keys must only contain"
+                "parameters marked as tl.constexpr (non-constants will be "
+                "updated in all cases)."
+            )
+        if self.assume_const:
+            if any(x in self.assume_const for x in const_arg_names):
+                raise RuntimeError(
+                    f"[{__print_name__}] ERROR: assume_const must only contain"
+                    "parameters NOT marked as tl.constexpr."
+                )
+            update_only_arg_names = [
+                arg_n for arg_n in non_const_arg_names if arg_n not in self.assume_const
+            ]
+        else:
+            update_only_arg_names = non_const_arg_names
+
+        const_arg_list = []
+        for arg_n in const_arg_names:
+            const_arg_list.append(kwargs[arg_n])
+
+        device = driver.active.get_current_device()
+        kernel_cache, target, backend, binder = self.fn.device_caches[device]
+        bound_args, specialization, options = binder(*args, **kwargs)
+        bind_end = time.time()
+
+        if callable(kwargs["grid"]):
+            grid = kwargs["grid"](kwargs)
+        else:
+            grid = kwargs["grid"]
+
+        stream = driver.active.get_current_stream(device)
+        launch_metadata = kernel.launch_metadata(grid, stream,
+                                                 *bound_args.values())
+
+        prepared_kernel = PreparedKernel33(
+            kwargs["grid"],
+            grid,
+            self.cache_launch_grid,
+            kernel,
+            launch_metadata,
+            self.fn.CompiledKernel.launch_enter_hook,
+            self.fn.CompiledKernel.launch_exit_hook,
+            update_only_arg_names,
+            bound_args,
+            self.cache_index_func(kwargs),
+            device,
+        )
+
+        wrapper_end = time.time()
+        compile_time = compile_end - compile_start
+        bind_time = bind_end - compile_end
+        wrapper_time = wrapper_end - bind_end
+
+        if flag_print_debug:
+            print(
+                f"[{__print_name__}] JIT compilation took {compile_time}s, binding {bind_time}, wrapper {wrapper_time}s."
+            )
+
+        return prepared_kernel
+
+    def _get_prepared_kernel32(self, *args, **kwargs) -> PreparedKernel32:
         """
         more or less redo what JITFunction.run is doing
         (c.f. triton/python/triton/runtime/jit.py:565)
@@ -285,7 +492,7 @@ class JitCache(KernelInterface):
         stream = driver.active.get_current_stream(device)
         launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
 
-        prepared_kernel = PreparedKernel(
+        prepared_kernel = PreparedKernel32(
             kwargs["grid"],
             grid,
             self.cache_launch_grid,
