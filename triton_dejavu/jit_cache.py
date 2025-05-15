@@ -308,6 +308,7 @@ class JitCache(KernelInterface):
         fn,
         arg_names,
         check_keys,
+        check_specialization,
         cache_lock: CacheLock,
         cache_launch_grid=False,
         assume_const=None,
@@ -339,6 +340,7 @@ class JitCache(KernelInterface):
             self.dynamic_mode = True
             self.run = self._run_dynamic
         self.check_keys = check_keys
+        self.check_specialization = check_specialization
         self.assume_const = assume_const
         self.kernel_cache = {}
 
@@ -346,6 +348,13 @@ class JitCache(KernelInterface):
             cache_key = ""
             for c_arg_name in check_keys:
                 cache_key += str(kwargs[c_arg_name])
+            for c_arg_name in check_specialization:
+                if kwargs[c_arg_name] == 1:
+                    cache_key += f"__{c_arg_name} == 1__"
+                elif kwargs[c_arg_name] % 16:
+                    cache_key += f"__({c_arg_name} > 1) && ({c_arg_name} % 16 == 0)__"
+                else:
+                    cache_key += f"__({c_arg_name} > 1) && ({c_arg_name} % 16 != 0)__"
             return cache_key
 
         self.cache_index_func = calc_cache_index
@@ -375,6 +384,11 @@ class JitCache(KernelInterface):
                 f"[{__print_name__}] ERROR: check_keys must only contain"
                 "parameters marked as tl.constexpr (non-constants will be "
                 "updated in all cases)."
+            )
+        if any(x in self.check_specialization for x in const_arg_names):
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: check_specialization must only contain"
+                "integer parameters NOT marked as tl.constexpr."
             )
         if self.assume_const:
             if any(x in self.assume_const for x in const_arg_names):
@@ -454,6 +468,11 @@ class JitCache(KernelInterface):
                 f"[{__print_name__}] ERROR: check_keys must only contain"
                 "parameters marked as tl.constexpr (non-constants will be "
                 "updated in all cases)."
+            )
+        if any(x in self.check_specialization for x in const_arg_names):
+            raise RuntimeError(
+                f"[{__print_name__}] ERROR: check_specialization must only contain"
+                "integer parameters NOT marked as tl.constexpr."
             )
         if self.assume_const:
             if any(x in self.assume_const for x in const_arg_names):
@@ -537,6 +556,14 @@ class JitCache(KernelInterface):
                         f"{type(kwargs[key])} is not one of supported types: "
                         f"int, bool float."
                     )
+            # check_specialization must be int
+            for key in self.check_specialization:
+                if type(kwargs[key]) not in [int, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_specialization {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int."
+                    )
             prepared_kernel = self._get_prepared_kernel(*args, **kwargs)
             if prepared_kernel.get_key() in self.kernel_cache and flag_print_debug:
                 print(
@@ -582,6 +609,14 @@ class JitCache(KernelInterface):
                         f"{type(kwargs[key])} is not one of supported types: "
                         f"int, bool float."
                     )
+            # check_specialization must be int
+            for key in self.check_specialization:
+                if type(kwargs[key]) not in [int, type(None)]:
+                    raise RuntimeError(
+                        f"[{__print_name__}] type of check_specialization {key} "
+                        f"{type(kwargs[key])} is not one of supported types: "
+                        f"int."
+                    )
             kernel_variant = self._get_prepared_kernel(*args, **kwargs)
             self.kernel_cache[kernel_variant.get_key()] = kernel_variant
 
@@ -590,6 +625,7 @@ class JitCache(KernelInterface):
 
 def jitcache(
     check_keys,
+    check_specialization,
     cache_lock=None,
     cache_launch_grid=False,
     assume_const=None,
@@ -615,6 +651,7 @@ def jitcache(
         return JitCache(
             fn,
             fn.arg_names,
+            check_specialization,
             check_keys,
             cache_lock,
             cache_launch_grid,
