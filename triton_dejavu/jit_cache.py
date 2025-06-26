@@ -338,6 +338,11 @@ class JitCache(KernelInterface):
             #  to JitFunction.run
             self.run = fn.run
             return
+        fn_name = str(fn).split(":")[1][:-1]
+        if flag_print_debug:
+            print(
+                f"[{__print_name__}] JITCache for Triton kernel {fn_name} is activated."
+            )
 
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
@@ -391,19 +396,19 @@ class JitCache(KernelInterface):
                 non_const_arg_names.append(p.name)
         if any(x in self.check_keys for x in non_const_arg_names):
             raise RuntimeError(
-                f"[{__print_name__}] ERROR: check_keys must only contain"
+                f"[{__print_name__}] ERROR: check_keys must only contain "
                 "parameters marked as tl.constexpr (non-constants will be "
                 "updated in all cases)."
             )
         if any(x in self.check_specialization for x in const_arg_names):
             raise RuntimeError(
-                f"[{__print_name__}] ERROR: check_specialization must only contain"
+                f"[{__print_name__}] ERROR: check_specialization must only contain "
                 "integer parameters NOT marked as tl.constexpr."
             )
         if self.assume_const:
             if any(x in self.assume_const for x in const_arg_names):
                 raise RuntimeError(
-                    f"[{__print_name__}] ERROR: assume_const must only contain"
+                    f"[{__print_name__}] ERROR: assume_const must only contain "
                     "parameters NOT marked as tl.constexpr."
                 )
             update_only_arg_names = [
@@ -475,19 +480,19 @@ class JitCache(KernelInterface):
                 non_const_arg_names.append(p.name)
         if any(x in self.check_keys for x in non_const_arg_names):
             raise RuntimeError(
-                f"[{__print_name__}] ERROR: check_keys must only contain"
+                f"[{__print_name__}] ERROR: check_keys must only contain "
                 "parameters marked as tl.constexpr (non-constants will be "
                 "updated in all cases)."
             )
         if any(x in self.check_specialization for x in const_arg_names):
             raise RuntimeError(
-                f"[{__print_name__}] ERROR: check_specialization must only contain"
+                f"[{__print_name__}] ERROR: check_specialization must only contain "
                 "integer parameters NOT marked as tl.constexpr."
             )
         if self.assume_const:
             if any(x in self.assume_const for x in const_arg_names):
                 raise RuntimeError(
-                    f"[{__print_name__}] ERROR: assume_const must only contain"
+                    f"[{__print_name__}] ERROR: assume_const must only contain "
                     "parameters NOT marked as tl.constexpr."
                 )
             update_only_arg_names = [
@@ -685,8 +690,8 @@ def jitcache(
         return JitCache(
             fn,
             fn.arg_names,
-            check_specialization,
             check_keys,
+            check_specialization,
             cache_lock,
             cache_launch_grid,
             assume_const,
