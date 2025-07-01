@@ -116,9 +116,6 @@ class Autotuner(KernelInterface):
         custom_data_storage=None,
     ):
         assert not (
-            (informed_fallback is not None) and (fallback_heuristic is not None)
-        ), "either fallback_heuristic or informed_fallback can be specified"
-        assert not (
             use_bo and use_random_search
         ), "either use_bo or use_random_search can be set"
         if config_space:
@@ -340,10 +337,12 @@ class Autotuner(KernelInterface):
             print(
                 "[triton-dejavu] WARNING: prepare_informed_fallback will be ignored because informed_fallback is not specified."
             )
+            self.informed_fallback = None
         if informed_fallback is not None and len(self._cache_for_fallback) == 0:
             print(
                 "[triton-dejavu] WARNING: informed_fallback and prepare_informed_fallback will be ignored because existing cache is empty."
             )
+            self.informed_fallback = None
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
         if self._use_fallback:
             assert (
@@ -684,7 +683,7 @@ class Autotuner(KernelInterface):
         if any(x in given_kwargs for x in required_config_args):
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {kwargs}."
+                    f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {[x for x in required_config_args if x in given_kwargs]}."
                 )
             # TODO: call pre_hook or kwargs['pre_hook']?
             if "pre_hook" in kwargs and kwargs["pre_hook"] is not None:
@@ -934,6 +933,8 @@ def autotune(
     :param informed_fallback: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
                               This heuristic gets the cache as 2nd argument to make an *informed* decision based on the existing best known configs at start time.
                               If `prepare_informed_fallback` is defined, then the returned dict of this function will be provided.
+                              If `informed_fallback` and `fallback_heuristic` are both defined, then the first has higher priority than the second. 
+                              The `fallback_heuristic` will then be used if the `informed_fallback` fails. 
     :type informed_fallback: callable(key, cache)
     :param prepare_informed_fallback: A lambda function to apply preprocessing to the existing autotuner cache at start time to facilitate the `informed_fallback`
                                       heuristic. The argument is the cache dict and any dict in return is expected.
