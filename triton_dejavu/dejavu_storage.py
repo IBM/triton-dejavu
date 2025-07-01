@@ -302,7 +302,13 @@ class DejavuStorage:
             self.__store__()
 
     def restore_autotuner_cache(
-        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None, ignore_dtypes=False,
+        self,
+        fn,
+        configs_hash,
+        key_hash,
+        param_hash,
+        all_pre_hook=None,
+        ignore_dtypes=False,
     ):
         # we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _get_weak_fn_hash(fn)
