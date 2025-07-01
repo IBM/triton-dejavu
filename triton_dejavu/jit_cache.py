@@ -347,7 +347,7 @@ class JitCache(KernelInterface):
             #  to JitFunction.run
             self.run = fn.run
             return
-        
+
         # if we have multiple decorators, the name is nested
         fnsl = str(fn).split(":")
         last_decorator = self
@@ -454,8 +454,12 @@ class JitCache(KernelInterface):
             # if autotuner is triton_dejavu, we can determine the last missing arguments
             if hasattr(self._last_decorator_fn, "_last_complete_args"):
                 for config_arg in self.autotuner_args:
-                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
-                    autotuner_configs_dict[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[
+                        config_arg
+                    ]
+                    autotuner_configs_dict[config_arg] = (
+                        self._last_decorator_fn._last_complete_args[config_arg]
+                    )
             else:
                 raise RuntimeError(
                     f"[{__print_name__}] ERROR: cannot determine autotune results."
@@ -555,8 +559,12 @@ class JitCache(KernelInterface):
             # if autotuner is triton_dejavu, we can determine the last missing arguments
             if hasattr(self._last_decorator_fn, "_last_complete_args"):
                 for config_arg in self.autotuner_args:
-                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
-                    autotuner_configs_dict[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[
+                        config_arg
+                    ]
+                    autotuner_configs_dict[config_arg] = (
+                        self._last_decorator_fn._last_complete_args[config_arg]
+                    )
             else:
                 raise RuntimeError(
                     f"[{__print_name__}] ERROR: cannot determine autotune results."
