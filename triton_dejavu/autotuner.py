@@ -114,6 +114,7 @@ class Autotuner(KernelInterface):
         quantiles=None,
         metadata_key=None,
         custom_data_storage=None,
+        ignore_dtypes=False,
     ):
         assert not (
             use_bo and use_random_search
@@ -141,6 +142,11 @@ class Autotuner(KernelInterface):
         self.config_kw_names = list(self.configs[0].kwargs.keys())
         self.key_idx = [arg_names.index(k) for k in key]
         self.arg_names = arg_names
+        self.ignore_dtypes = ignore_dtypes
+        if self.ignore_dtypes and flag_print_debug_verbose:
+            print(
+                f"[triton-dejavu] dtypes of key-parameters will be ignored."
+            )
 
         # Reset to zero or restore values
         self.reset_idx = []
@@ -286,6 +292,7 @@ class Autotuner(KernelInterface):
             self.key_hash,
             self._param_hash,
             all_pre_hook=all_pre_hook,
+            ignore_dtypes=self.ignore_dtypes,
         )
         if configs and len(self.cache) > 1:
             # iterate over given config list to detect pre_hooks on individual config level
@@ -708,9 +715,10 @@ class Autotuner(KernelInterface):
                     if name in all_args:
                         _args.append(all_args[name])
                 key = [_args[i] for i in self.key_idx]
-                for arg in _args:
-                    if hasattr(arg, "dtype"):
-                        key.append(str(arg.dtype))
+                if not self.ignore_dtypes:
+                    for arg in _args:
+                        if hasattr(arg, "dtype"):
+                            key.append(str(arg.dtype))
                 # to avoid encoding conflicts
                 key_s = [str(k) for k in key]
                 key_orig = key
@@ -874,6 +882,7 @@ def autotune(
     quantiles=None,
     metadata_key=None,
     custom_data_storage=None,
+    ignore_dtypes=False,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -959,6 +968,8 @@ def autotune(
     :type metadata_key: str
     :param custom_data_storage: Absolute path to a custom triton-dejavu data location for this function.
     :type custom_data_storage: str
+    :param ignore_dtypes: Flag to indicate not to consider dtypes of key-arguments as key-index, default False.
+    :type ignore_dtypes: bool
     """
 
     def decorator(fn):
@@ -987,6 +998,7 @@ def autotune(
             quantiles,
             metadata_key,
             custom_data_storage,
+            ignore_dtypes,
         )
 
     return decorator

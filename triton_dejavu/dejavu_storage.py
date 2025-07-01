@@ -37,13 +37,15 @@ from .dejavu_utilities import (
 from triton.runtime.jit import DependenciesFinder
 
 
-def _create_tuple(k):
+def _create_tuple(k, ignore_dtypes=False):
     s = k[1:-1]
     entries = s.split(", ")
     ret = []
     for e in entries:
         if e[0] == "'" or e[0] == '"':
-            ret.append(e[1:-1])
+            es = e[1:-1]
+            if (not "torch." in es) or (not ignore_dtypes):
+                ret.append(es)
         else:
             ret.append(e)
     ret_t = tuple(ret)
@@ -300,7 +302,7 @@ class DejavuStorage:
             self.__store__()
 
     def restore_autotuner_cache(
-        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None
+        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None, ignore_dtypes=False,
     ):
         # we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _get_weak_fn_hash(fn)
@@ -326,7 +328,7 @@ class DejavuStorage:
         ret = {}
         tmp_used_configs = []
         for k, v in cache_json["cache"].items():
-            kt = _create_tuple(k)
+            kt = _create_tuple(k, ignore_dtypes=ignore_dtypes)
             va = _create_config_args(v)
             if all_pre_hook is not None:
                 va["pre_hook"] = all_pre_hook
