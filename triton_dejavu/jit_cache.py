@@ -73,6 +73,7 @@ class PreparedKernel33:
         launch_exit_hook,
         update_only_arg_names,
         bound_args,
+        autotuner_results_dict,
         cache_key,
         device,
     ):
@@ -92,6 +93,7 @@ class PreparedKernel33:
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
+        self.autotuner_results_dict = autotuner_results_dict
 
         self.arg_list = []
         self.update_args_index = {}
@@ -158,6 +160,8 @@ class PreparedKernel33:
             grid_0, grid_1, grid_2 = self.concrete_grid
         else:
             if self.grid_is_callable:
+                for arg_n, value in self.autotuner_results_dict.items():
+                    kwargs[arg_n] = value
                 grid = kwargs["grid"](kwargs)
             else:
                 grid = kwargs["grid"]
@@ -198,6 +202,7 @@ class PreparedKernel32:
         non_const_arg_names,
         assume_const_vals_dict,
         update_only_arg_names,
+        autotuner_results_dict,
         cache_key,
         device,
     ):
@@ -217,6 +222,7 @@ class PreparedKernel32:
         self.launch_metadata = launch_metadata
         self.launch_enter_hook = launch_enter_hook
         self.launch_exit_hook = launch_exit_hook
+        self.autotuner_results_dict = autotuner_results_dict
 
         self.non_const_arg_names = non_const_arg_names
         self.non_const_vals_lst = []
@@ -284,6 +290,8 @@ class PreparedKernel32:
             grid_0, grid_1, grid_2 = self.concrete_grid
         else:
             if self.grid_is_callable:
+                for arg_n, value in self.autotuner_results_dict.items():
+                    kwargs[arg_n] = value
                 grid = kwargs["grid"](kwargs)
             else:
                 grid = kwargs["grid"]
@@ -322,6 +330,7 @@ class JitCache(KernelInterface):
         cache_lock: CacheLock,
         cache_launch_grid=False,
         assume_const=None,
+        autotuner_args=None,
     ):
         assert 3.0 <= triton_version_float <= 3.3
         if triton_version_float <= 3.2:
@@ -338,15 +347,29 @@ class JitCache(KernelInterface):
             #  to JitFunction.run
             self.run = fn.run
             return
-        fn_name = str(fn).split(":")[1][:-1]
+        
+        # if we have multiple decorators, the name is nested
+        fnsl = str(fn).split(":")
+        last_decorator = self
+        last_fn = fn
+        additional_decorators = []
+        while len(fnsl) < 2:
+            additional_decorators.append(str(last_fn).split(" ")[0].replace("<", ""))
+            last_decorator = last_fn
+            last_fn = fn.fn
+            fnsl = str(last_fn).split(":")
+        fn_name = fnsl[1][:-1]
+        self._jit_fn = last_fn
+        self._last_decorator_fn = last_decorator
         if flag_print_debug:
             print(
                 f"[{__print_name__}] JITCache for Triton kernel {fn_name} is activated."
+                f" Additional decorators: {additional_decorators}"
             )
 
-        self.base_fn = fn
-        while not inspect.isfunction(self.base_fn):
-            self.base_fn = self.base_fn.fn
+        # self.base_fn = fn
+        # while not inspect.isfunction(self.base_fn):
+        #     self.base_fn = self.base_fn.fn
         self.cache_lock = cache_lock
         self.cache_launch_grid = cache_launch_grid
         self.dynamic_mode = False
@@ -357,12 +380,15 @@ class JitCache(KernelInterface):
         self.check_keys = check_keys
         self.check_specialization = check_specialization
         self.assume_const = assume_const
+        self.autotuner_args = []
+        if autotuner_args is not None:
+            self.autotuner_args = autotuner_args
         self.kernel_cache = {}
 
         def calc_cache_index(kwargs):
             cache_key = ""
             for c_arg_name in check_keys:
-                cache_key += str(kwargs[c_arg_name])
+                cache_key += f"_{kwargs[c_arg_name]}"
             for c_arg_name in check_specialization:
                 if kwargs[c_arg_name] == 1:
                     cache_key += f"__{c_arg_name} == 1__"
@@ -389,7 +415,9 @@ class JitCache(KernelInterface):
 
         const_arg_names = []
         non_const_arg_names = []
-        for p in self.fn.params:
+        for p in self._jit_fn.params:
+            if p.name in self.autotuner_args:
+                continue
             if p.is_constexpr or p.is_const:
                 const_arg_names.append(p.name)
             else:
@@ -421,8 +449,20 @@ class JitCache(KernelInterface):
         for arg_n in const_arg_names:
             const_arg_list.append(kwargs[arg_n])
 
+        autotuner_configs_dict = {}
+        if len(self.autotuner_args) > 0:
+            # if autotuner is triton_dejavu, we can determine the last missing arguments
+            if hasattr(self._last_decorator_fn, "_last_complete_args"):
+                for config_arg in self.autotuner_args:
+                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+                    autotuner_configs_dict[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+            else:
+                raise RuntimeError(
+                    f"[{__print_name__}] ERROR: cannot determine autotune results."
+                )
+
         device = driver.active.get_current_device()
-        kernel_cache, target, backend, binder = self.fn.device_caches[device]
+        kernel_cache, target, backend, binder = self._jit_fn.device_caches[device]
         bound_args, specialization, options = binder(*args, **kwargs)
         bind_end = time.time()
 
@@ -440,10 +480,11 @@ class JitCache(KernelInterface):
             self.cache_launch_grid,
             kernel,
             launch_metadata,
-            self.fn.CompiledKernel.launch_enter_hook,
-            self.fn.CompiledKernel.launch_exit_hook,
+            self._jit_fn.CompiledKernel.launch_enter_hook,
+            self._jit_fn.CompiledKernel.launch_exit_hook,
             update_only_arg_names,
             bound_args,
+            autotuner_configs_dict,
             self.cache_index_func(kwargs),
             device,
         )
@@ -473,7 +514,9 @@ class JitCache(KernelInterface):
 
         const_arg_names = []
         non_const_arg_names = []
-        for p in self.fn.params:
+        for p in self._jit_fn.params:
+            if p.name in self.autotuner_args:
+                continue
             if p.is_constexpr or p.is_const:
                 const_arg_names.append(p.name)
             else:
@@ -507,13 +550,25 @@ class JitCache(KernelInterface):
             update_only_arg_names = non_const_arg_names
             assume_const_vals_dict = {}
 
+        autotuner_configs_dict = {}
+        if len(self.autotuner_args) > 0:
+            # if autotuner is triton_dejavu, we can determine the last missing arguments
+            if hasattr(self._last_decorator_fn, "_last_complete_args"):
+                for config_arg in self.autotuner_args:
+                    kwargs[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+                    autotuner_configs_dict[config_arg] = self._last_decorator_fn._last_complete_args[config_arg]
+            else:
+                raise RuntimeError(
+                    f"[{__print_name__}] ERROR: cannot determine autotune results."
+                )
+
         (
             bound_args,
             sig_and_spec,
             constexpr_vals,
             non_constexpr_vals,
             excess_kwargs,
-        ) = self.fn.binder(*args, **kwargs)
+        ) = self._jit_fn.binder(*args, **kwargs)
         bind_end = time.time()
 
         if callable(kwargs["grid"]):
@@ -531,11 +586,12 @@ class JitCache(KernelInterface):
             self.cache_launch_grid,
             kernel,
             launch_metadata,
-            self.fn.CompiledKernel.launch_enter_hook,
-            self.fn.CompiledKernel.launch_exit_hook,
+            self._jit_fn.CompiledKernel.launch_enter_hook,
+            self._jit_fn.CompiledKernel.launch_exit_hook,
             non_const_arg_names,
             assume_const_vals_dict,
             update_only_arg_names,
+            autotuner_configs_dict,
             self.cache_index_func(kwargs),
             device,
         )
@@ -592,7 +648,7 @@ class JitCache(KernelInterface):
         except KeyError as e:
             print(
                 f"[{__print_name__}:JitCache] ERROR: Key {self.cache_index_func(kwargs)}  not in cache.\n"
-                f"Current cache: {list(self.kernel_cache.keys())}"
+                f"Current cache ({len(self.kernel_cache)} entries): {list(self.kernel_cache.keys())}"
             )
             print(e)
             raise e
@@ -614,7 +670,7 @@ class JitCache(KernelInterface):
             if flag_print_debug:
                 print(
                     f"[{__print_name__}:JitCache] Key {self.cache_index_func(kwargs)}  not in cache, compiling...\n"
-                    f"Current cache: {list(self.kernel_cache.keys())}"
+                    f"Current cache ({len(self.kernel_cache)} entries): {list(self.kernel_cache.keys())}"
                 )
             # we only support int, bool, float as cache index
             for key in self.check_keys:
@@ -644,6 +700,7 @@ def jitcache(
     cache_lock=None,
     cache_launch_grid=False,
     assume_const=None,
+    autotuner_args=None,
 ):
     """
     Decorator for caching a :code:`triton.jit`'d function.
@@ -684,6 +741,9 @@ def jitcache(
                          tl.constexpr but should be treated as constants in
                          this kernel launch.
     :type assume_const: list[str]
+    :param autotuner_args: A list of parameter names that are handled by an
+                            autotuner decorator AFTER the jitcache.
+    :type autotuner_args: list[str]
     """
 
     def decorator(fn):
@@ -695,6 +755,7 @@ def jitcache(
             cache_lock,
             cache_launch_grid,
             assume_const,
+            autotuner_args,
         )
 
     return decorator

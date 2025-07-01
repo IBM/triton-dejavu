@@ -144,7 +144,9 @@ class Autotuner(KernelInterface):
         self.arg_names = arg_names
         self.ignore_dtypes = ignore_dtypes
         if self.ignore_dtypes and flag_print_debug_verbose:
-            print(f"[triton-dejavu] dtypes of key-parameters will be ignored.")
+            print(
+                f"[triton-dejavu] dtypes of key-parameters will be ignored."
+            )
 
         # Reset to zero or restore values
         self.reset_idx = []
@@ -211,6 +213,7 @@ class Autotuner(KernelInterface):
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
+        self._last_complete_args = None
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
@@ -803,6 +806,7 @@ class Autotuner(KernelInterface):
                     f"<autotune:{self.best_config}>"
                 ).replace(" ", "")
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
+            self._last_complete_args = full_nargs
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
             if not hasattr(config, "all_kwargs"):
@@ -940,8 +944,8 @@ def autotune(
     :param informed_fallback: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
                               This heuristic gets the cache as 2nd argument to make an *informed* decision based on the existing best known configs at start time.
                               If `prepare_informed_fallback` is defined, then the returned dict of this function will be provided.
-                              If `informed_fallback` and `fallback_heuristic` are both defined, then the first has higher priority than the second.
-                              The `fallback_heuristic` will then be used if the `informed_fallback` fails.
+                              If `informed_fallback` and `fallback_heuristic` are both defined, then the first has higher priority than the second. 
+                              The `fallback_heuristic` will then be used if the `informed_fallback` fails. 
     :type informed_fallback: callable(key, cache)
     :param prepare_informed_fallback: A lambda function to apply preprocessing to the existing autotuner cache at start time to facilitate the `informed_fallback`
                                       heuristic. The argument is the cache dict and any dict in return is expected.
