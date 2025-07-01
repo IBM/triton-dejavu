@@ -355,8 +355,13 @@ class JitCache(KernelInterface):
         additional_decorators = []
         while len(fnsl) < 2:
             additional_decorators.append(str(last_fn).split(" ")[0].replace("<", ""))
+            if len(additional_decorators) > 25:
+                raise RuntimeError(
+                    "JICache detected more than 25 decorators AFTER itself. This is not supported."
+                    f" The detected decorators are: {additional_decorators}"
+                )
             last_decorator = last_fn
-            last_fn = fn.fn
+            last_fn = last_fn.fn
             fnsl = str(last_fn).split(":")
         fn_name = fnsl[1][:-1]
         self._jit_fn = last_fn
