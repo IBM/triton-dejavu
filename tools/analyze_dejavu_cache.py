@@ -44,8 +44,7 @@ def analyze_cache_files(dejavu_cache):
         s for s in dir(used_configs_list[0]) if s[0:2] != "__" and s not in __non_config_names__
     ]
     existing_kwarg_names = [s for s in list(used_configs_list[0].kwargs.keys()) if s[0:2] != "__" and s not in existing_parameter_names]
-    # existing_parameter_names = list(set(existing_parameter_names))
-    print(existing_parameter_names, existing_kwarg_names)
+    # print(existing_parameter_names, existing_kwarg_names)
     freq_of_parameters = {n:0 for n in existing_parameter_names}
     freq_of_parameters.update({k:0 for k in existing_kwarg_names})
     # print(used_configs_list[0])
@@ -58,7 +57,7 @@ def analyze_cache_files(dejavu_cache):
             v = c.kwargs[k]
             if v != 0 and v != None:
                 freq_of_parameters[k] += 1
-    print(freq_of_parameters)
+    # print(freq_of_parameters)
     used_parameters = {k:v for k,v in freq_of_parameters.items() if v > 0}
 
     feature_vectors = {}
@@ -81,12 +80,32 @@ def analyze_cache_files(dejavu_cache):
     # print(feature_vectors)
     # print(class_vectors)
 
-    from sklearn import tree
-    clf = tree.DecisionTreeClassifier()
     analyzed_parameter_names = list(feature_vectors.keys())
-    clf = clf.fit(feature_vectors[analyzed_parameter_names[0]], class_vectors[analyzed_parameter_names[0]])
+    translate_feature_names = {f"feature_{i}" :k for i, k in enumerate(cache_json["keys"])}
+    # print(translate_feature_names)
+
+    from sklearn import tree
+    decision_trees = {}
+    for p in analyzed_parameter_names:
+        dt = tree.DecisionTreeClassifier()
+        dt = dt.fit(feature_vectors[p], class_vectors[p])
+        raw_text = tree.export_text(dt)
+        tt_0 = raw_text 
+        for f,n in translate_feature_names.items():
+            tt_0 = tt_0.replace(f, n)
+        tt_1 = tt_0.replace('class', p)
+        # print(tt_1)
+        decision_trees[p] = {'dt': dt, 'raw': raw_text, 'pretty': tt_1}
+    
+    # clf = tree.DecisionTreeClassifier()
+    # clf = clf.fit(feature_vectors[analyzed_parameter_names[0]], class_vectors[analyzed_parameter_names[0]])
     # tree.plot_tree(clf)
-    print(tree.export_text(clf))
+    # print(tree.export_text(clf))
+
+    print(f"Found {len(analyzed_parameter_names)} used configurations, each with the following decision tree:")
+    for p in analyzed_parameter_names:
+        print(f"\n{p}")
+        print(f"{decision_trees[p]['pretty']}")
 
     return 0
 
