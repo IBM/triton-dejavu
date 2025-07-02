@@ -167,6 +167,23 @@ def get_string_hash(s):
     return h
 
 
+def load_cache_file(cache_file, all_pre_hook=None, ignore_dtypes=False):
+    with open(cache_file, "r") as f:
+        cache_json = json.load(f)
+    ret = {}
+    tmp_used_configs = []
+    for k, v in cache_json["cache"].items():
+        kt = _create_tuple(k, ignore_dtypes=ignore_dtypes)
+        va = _create_config_args(v)
+        if all_pre_hook is not None:
+            va["pre_hook"] = all_pre_hook
+        c = triton.Config(**va)
+        ret[kt] = c
+        if c not in tmp_used_configs:
+            tmp_used_configs.append(c)
+    return cache_json, ret, tmp_used_configs
+
+
 class DejavuStorage:
     def __init__(self) -> None:
         self.storage_prefix = get_storage_prefix()
@@ -328,24 +345,13 @@ class DejavuStorage:
             return {}
         if cache_file not in self._known_files:
             self._known_files.append(cache_file)
-        with open(cache_file, "r") as f:
-            cache_json = json.load(f)
+        cache_json, ret, tmp_used_configs = load_cache_file(cache_file, 
+                                                            all_pre_hook=all_pre_hook, ignore_dtypes=ignore_dtypes)
+        if flag_print_debug_verbose:
+            print(
+                f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
+            )
         self.fn_storage[folder_name] = cache_json
-        ret = {}
-        tmp_used_configs = []
-        for k, v in cache_json["cache"].items():
-            kt = _create_tuple(k, ignore_dtypes=ignore_dtypes)
-            va = _create_config_args(v)
-            if all_pre_hook is not None:
-                va["pre_hook"] = all_pre_hook
-            c = triton.Config(**va)
-            ret[kt] = c
-            if c not in tmp_used_configs:
-                tmp_used_configs.append(c)
-            if flag_print_debug_verbose:
-                print(
-                    f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
-                )
         self.used_configs[folder_name] = tmp_used_configs
         if flag_print_debug:
             print(
