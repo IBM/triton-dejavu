@@ -102,7 +102,7 @@ def analyze_cache_files(dejavu_cache):
     # tree.plot_tree(clf)
     # print(tree.export_text(clf))
 
-    print(f"Found {len(analyzed_parameter_names)} used configurations, each with the following decision tree:")
+    print(f"Found {len(analyzed_parameter_names)} used configuration parameters, each with the following decision tree:")
     for p in analyzed_parameter_names:
         print(f"\n{p}")
         print(f"{decision_trees[p]['pretty']}")
