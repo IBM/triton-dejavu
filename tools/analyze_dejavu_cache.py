@@ -22,6 +22,10 @@ import json
 
 from triton_dejavu.dejavu_storage import load_cache_file
 from triton_dejavu.dejavu_utilities import get_triton_config_parameter_names
+from sklearn import tree
+
+
+split_config_features = False
 
 
 def print_usage(argv0):
@@ -59,53 +63,88 @@ def analyze_cache_files(dejavu_cache):
                 freq_of_parameters[k] += 1
     # print(freq_of_parameters)
     used_parameters = {k:v for k,v in freq_of_parameters.items() if v > 0}
-
-    feature_vectors = {}
-    class_vectors = {}
-    for p in used_parameters.keys():
-        feature_vectors_single = []
-        class_vectors_single = []
-        for k,c in triton_cache.items():
-            feature_vectors_single.append(k)
-            if p in existing_kwarg_names:
-                class_value = c.kwargs[p]
-            else:
-                class_value = getattr(c, p)
-            class_vectors_single.append(class_value)
-        # filter classes with only one value
-        if len(set(class_vectors_single)) < 2:
-            continue
-        feature_vectors[p] = feature_vectors_single
-        class_vectors[p] = class_vectors_single
-    # print(feature_vectors)
-    # print(class_vectors)
-
-    analyzed_parameter_names = list(feature_vectors.keys())
     translate_feature_names = {f"feature_{i}" :k for i, k in enumerate(cache_json["keys"])}
     # print(translate_feature_names)
 
-    from sklearn import tree
-    decision_trees = {}
-    for p in analyzed_parameter_names:
+    if split_config_features:
+        feature_vectors = {}
+        class_vectors = {}
+        for p in used_parameters.keys():
+            feature_vectors_single = []
+            class_vectors_single = []
+            for k,c in triton_cache.items():
+                feature_vectors_single.append(k)
+                if p in existing_kwarg_names:
+                    class_value = c.kwargs[p]
+                else:
+                    class_value = getattr(c, p)
+                class_vectors_single.append(class_value)
+            # filter classes with only one value
+            if len(set(class_vectors_single)) < 2:
+                continue
+            feature_vectors[p] = feature_vectors_single
+            class_vectors[p] = class_vectors_single
+        # print(feature_vectors)
+        # print(class_vectors)
+
+        analyzed_parameter_names = list(feature_vectors.keys())
+
+        decision_trees = {}
+        for p in analyzed_parameter_names:
+            dt = tree.DecisionTreeClassifier()
+            dt = dt.fit(feature_vectors[p], class_vectors[p])
+            raw_text = tree.export_text(dt)
+            tt_0 = raw_text 
+            for f,n in translate_feature_names.items():
+                tt_0 = tt_0.replace(f, n)
+            tt_1 = tt_0.replace('class', p)
+            # print(tt_1)
+            decision_trees[p] = {'dt': dt, 'raw': raw_text, 'pretty': tt_1}
+    
+        # clf = tree.DecisionTreeClassifier()
+        # clf = clf.fit(feature_vectors[analyzed_parameter_names[0]], class_vectors[analyzed_parameter_names[0]])
+        # tree.plot_tree(clf)
+        # print(tree.export_text(clf))
+
+        print(f"Found {len(analyzed_parameter_names)} used configuration parameters, each with the following decision tree:")
+        for p in analyzed_parameter_names:
+            print(f"\n{p}")
+            print(f"{decision_trees[p]['pretty']}")
+    else:
+        feature_vectors = []
+        unified_classes = []
+        translate_class_num_to_string = {}
+        translate_class_string_to_num = {}
+        class_nums = []
+        class_num_cnt = 0
+        for k,c in triton_cache.items():
+            feature_vectors.append(k)
+            cls_combined = ""
+            for p in used_parameters.keys():
+                if p in existing_kwarg_names:
+                    class_value = c.kwargs[p]
+                else:
+                    class_value = getattr(c, p)
+                cls_combined += f"{p}={class_value}, "
+            cls_combined = cls_combined[:-2]
+            unified_classes.append(cls_combined)
+            if cls_combined not in translate_class_string_to_num:
+                translate_class_string_to_num[cls_combined] = class_num_cnt
+                translate_class_num_to_string[class_num_cnt] = cls_combined
+                class_nums.append(class_num_cnt)
+                class_num_cnt += 1
+            else:
+                class_nums.append(translate_class_string_to_num[cls_combined])
+            
         dt = tree.DecisionTreeClassifier()
-        dt = dt.fit(feature_vectors[p], class_vectors[p])
+        dt = dt.fit(feature_vectors, unified_classes)
         raw_text = tree.export_text(dt)
         tt_0 = raw_text 
         for f,n in translate_feature_names.items():
             tt_0 = tt_0.replace(f, n)
-        tt_1 = tt_0.replace('class', p)
-        # print(tt_1)
-        decision_trees[p] = {'dt': dt, 'raw': raw_text, 'pretty': tt_1}
-    
-    # clf = tree.DecisionTreeClassifier()
-    # clf = clf.fit(feature_vectors[analyzed_parameter_names[0]], class_vectors[analyzed_parameter_names[0]])
-    # tree.plot_tree(clf)
-    # print(tree.export_text(clf))
-
-    print(f"Found {len(analyzed_parameter_names)} used configuration parameters, each with the following decision tree:")
-    for p in analyzed_parameter_names:
-        print(f"\n{p}")
-        print(f"{decision_trees[p]['pretty']}")
+        tt_1 = tt_0.replace('class: ', 'config: ')
+        print(f"Found {len(used_parameters)} used configuration parameters. The configurations follow this decision tree:")
+        print(tt_1)
 
     return 0
 
