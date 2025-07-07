@@ -125,7 +125,7 @@ def analyze_cache_files(dejavu_cache):
                     class_value = c.kwargs[p]
                 else:
                     class_value = getattr(c, p)
-                cls_combined += f"{p}={class_value}, "
+                cls_combined += f"\"{p}\": {class_value}, "
             cls_combined = cls_combined[:-2]
             unified_classes.append(cls_combined)
             if cls_combined not in translate_class_string_to_num:
