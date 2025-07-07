@@ -345,12 +345,11 @@ class DejavuStorage:
             return {}
         if cache_file not in self._known_files:
             self._known_files.append(cache_file)
-        cache_json, ret, tmp_used_configs = load_cache_file(cache_file, 
-                                                            all_pre_hook=all_pre_hook, ignore_dtypes=ignore_dtypes)
+        cache_json, ret, tmp_used_configs = load_cache_file(
+            cache_file, all_pre_hook=all_pre_hook, ignore_dtypes=ignore_dtypes
+        )
         if flag_print_debug_verbose:
-            print(
-                f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
-            )
+            print(f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}")
         self.fn_storage[folder_name] = cache_json
         self.used_configs[folder_name] = tmp_used_configs
         if flag_print_debug:
