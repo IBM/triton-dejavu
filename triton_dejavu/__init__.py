@@ -15,7 +15,7 @@
 #  *******************************************************************************/
 #
 
-__version__ = "0.7.3"
+__version__ = "0.7.4"
 
 
 from .dejavu_storage import global_dejavu_storage

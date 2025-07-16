@@ -114,10 +114,8 @@ class Autotuner(KernelInterface):
         quantiles=None,
         metadata_key=None,
         custom_data_storage=None,
+        ignore_dtypes=False,
     ):
-        assert not (
-            (informed_fallback is not None) and (fallback_heuristic is not None)
-        ), "either fallback_heuristic or informed_fallback can be specified"
         assert not (
             use_bo and use_random_search
         ), "either use_bo or use_random_search can be set"
@@ -144,6 +142,9 @@ class Autotuner(KernelInterface):
         self.config_kw_names = list(self.configs[0].kwargs.keys())
         self.key_idx = [arg_names.index(k) for k in key]
         self.arg_names = arg_names
+        self.ignore_dtypes = ignore_dtypes
+        if self.ignore_dtypes and flag_print_debug_verbose:
+            print(f"[triton-dejavu] dtypes of key-parameters will be ignored.")
 
         # Reset to zero or restore values
         self.reset_idx = []
@@ -210,6 +211,7 @@ class Autotuner(KernelInterface):
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
+        self._last_complete_args = None
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
@@ -289,6 +291,7 @@ class Autotuner(KernelInterface):
             self.key_hash,
             self._param_hash,
             all_pre_hook=all_pre_hook,
+            ignore_dtypes=self.ignore_dtypes,
         )
         if configs and len(self.cache) > 1:
             # iterate over given config list to detect pre_hooks on individual config level
@@ -340,10 +343,12 @@ class Autotuner(KernelInterface):
             print(
                 "[triton-dejavu] WARNING: prepare_informed_fallback will be ignored because informed_fallback is not specified."
             )
+            self.informed_fallback = None
         if informed_fallback is not None and len(self._cache_for_fallback) == 0:
             print(
                 "[triton-dejavu] WARNING: informed_fallback and prepare_informed_fallback will be ignored because existing cache is empty."
             )
+            self.informed_fallback = None
         self._use_fallback = os.environ.get("TRITON_DEJAVU_FORCE_FALLBACK", "0") == "1"
         if self._use_fallback:
             assert (
@@ -684,7 +689,7 @@ class Autotuner(KernelInterface):
         if any(x in given_kwargs for x in required_config_args):
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {kwargs}."
+                    f"[triton-dejavu] Autotuning skipped, use config given as part of kwargs: {[x for x in required_config_args if x in given_kwargs]}."
                 )
             # TODO: call pre_hook or kwargs['pre_hook']?
             if "pre_hook" in kwargs and kwargs["pre_hook"] is not None:
@@ -709,9 +714,10 @@ class Autotuner(KernelInterface):
                     if name in all_args:
                         _args.append(all_args[name])
                 key = [_args[i] for i in self.key_idx]
-                for arg in _args:
-                    if hasattr(arg, "dtype"):
-                        key.append(str(arg.dtype))
+                if not self.ignore_dtypes:
+                    for arg in _args:
+                        if hasattr(arg, "dtype"):
+                            key.append(str(arg.dtype))
                 # to avoid encoding conflicts
                 key_s = [str(k) for k in key]
                 key_orig = key
@@ -798,6 +804,7 @@ class Autotuner(KernelInterface):
                     f"<autotune:{self.best_config}>"
                 ).replace(" ", "")
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
+            self._last_complete_args = full_nargs
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
             if not hasattr(config, "all_kwargs"):
@@ -875,6 +882,7 @@ def autotune(
     quantiles=None,
     metadata_key=None,
     custom_data_storage=None,
+    ignore_dtypes=False,
 ):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -934,6 +942,8 @@ def autotune(
     :param informed_fallback: A lambda function to determine the used configuration in case `TRITON_DEJAVU_FORCE_FALLBACK=1` and no entry is found in the cache.
                               This heuristic gets the cache as 2nd argument to make an *informed* decision based on the existing best known configs at start time.
                               If `prepare_informed_fallback` is defined, then the returned dict of this function will be provided.
+                              If `informed_fallback` and `fallback_heuristic` are both defined, then the first has higher priority than the second.
+                              The `fallback_heuristic` will then be used if the `informed_fallback` fails.
     :type informed_fallback: callable(key, cache)
     :param prepare_informed_fallback: A lambda function to apply preprocessing to the existing autotuner cache at start time to facilitate the `informed_fallback`
                                       heuristic. The argument is the cache dict and any dict in return is expected.
@@ -958,6 +968,8 @@ def autotune(
     :type metadata_key: str
     :param custom_data_storage: Absolute path to a custom triton-dejavu data location for this function.
     :type custom_data_storage: str
+    :param ignore_dtypes: Flag to indicate not to consider dtypes of key-arguments as key-index, default False.
+    :type ignore_dtypes: bool
     """
 
     def decorator(fn):
@@ -986,6 +998,7 @@ def autotune(
             quantiles,
             metadata_key,
             custom_data_storage,
+            ignore_dtypes,
         )
 
     return decorator

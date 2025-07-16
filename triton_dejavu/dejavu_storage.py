@@ -37,13 +37,15 @@ from .dejavu_utilities import (
 from triton.runtime.jit import DependenciesFinder
 
 
-def _create_tuple(k):
+def _create_tuple(k, ignore_dtypes=False):
     s = k[1:-1]
     entries = s.split(", ")
     ret = []
     for e in entries:
         if e[0] == "'" or e[0] == '"':
-            ret.append(e[1:-1])
+            es = e[1:-1]
+            if (not "torch." in es) or (not ignore_dtypes):
+                ret.append(es)
         else:
             ret.append(e)
     ret_t = tuple(ret)
@@ -163,6 +165,25 @@ def get_list_hash(l):
 def get_string_hash(s):
     h = hashlib.sha256(s.encode("utf-8")).hexdigest()
     return h
+
+
+def load_cache_file(cache_file, all_pre_hook=None, ignore_dtypes=False):
+    with open(cache_file, "r") as f:
+        cache_json = json.load(f)
+    ret = {}
+    tmp_used_configs = []
+    for k, v in cache_json["cache"].items():
+        kt = _create_tuple(k, ignore_dtypes=ignore_dtypes)
+        va = _create_config_args(v)
+        if all_pre_hook is not None:
+            va["pre_hook"] = all_pre_hook
+        c = triton.Config(**va)
+        ret[kt] = c
+        if c not in tmp_used_configs:
+            tmp_used_configs.append(c)
+        if flag_print_debug_verbose:
+            print(f"[triton-dejavu] restored {str(c)} for key {kt}")
+    return cache_json, ret, tmp_used_configs
 
 
 class DejavuStorage:
@@ -300,7 +321,13 @@ class DejavuStorage:
             self.__store__()
 
     def restore_autotuner_cache(
-        self, fn, configs_hash, key_hash, param_hash, all_pre_hook=None
+        self,
+        fn,
+        configs_hash,
+        key_hash,
+        param_hash,
+        all_pre_hook=None,
+        ignore_dtypes=False,
     ):
         # we need to consider dependencies as well, so we will wait for fn.hash
         fn_hash = _get_weak_fn_hash(fn)
@@ -320,24 +347,10 @@ class DejavuStorage:
             return {}
         if cache_file not in self._known_files:
             self._known_files.append(cache_file)
-        with open(cache_file, "r") as f:
-            cache_json = json.load(f)
+        cache_json, ret, tmp_used_configs = load_cache_file(
+            cache_file, all_pre_hook=all_pre_hook, ignore_dtypes=ignore_dtypes
+        )
         self.fn_storage[folder_name] = cache_json
-        ret = {}
-        tmp_used_configs = []
-        for k, v in cache_json["cache"].items():
-            kt = _create_tuple(k)
-            va = _create_config_args(v)
-            if all_pre_hook is not None:
-                va["pre_hook"] = all_pre_hook
-            c = triton.Config(**va)
-            ret[kt] = c
-            if c not in tmp_used_configs:
-                tmp_used_configs.append(c)
-            if flag_print_debug_verbose:
-                print(
-                    f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}"
-                )
         self.used_configs[folder_name] = tmp_used_configs
         if flag_print_debug:
             print(
