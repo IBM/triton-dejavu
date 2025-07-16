@@ -181,6 +181,8 @@ def load_cache_file(cache_file, all_pre_hook=None, ignore_dtypes=False):
         ret[kt] = c
         if c not in tmp_used_configs:
             tmp_used_configs.append(c)
+        if flag_print_debug_verbose:
+            print(f"[triton-dejavu] restored {str(c)} for key {kt}")
     return cache_json, ret, tmp_used_configs
 
 
@@ -348,8 +350,6 @@ class DejavuStorage:
         cache_json, ret, tmp_used_configs = load_cache_file(
             cache_file, all_pre_hook=all_pre_hook, ignore_dtypes=ignore_dtypes
         )
-        if flag_print_debug_verbose:
-            print(f"[triton-dejavu] restored {str(c)} for {folder_name} and key {kt}")
         self.fn_storage[folder_name] = cache_json
         self.used_configs[folder_name] = tmp_used_configs
         if flag_print_debug:
