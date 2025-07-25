@@ -366,6 +366,10 @@ class JitCache(KernelInterface):
         fn_name = fnsl[1][:-1]
         self._jit_fn = last_fn
         self._last_decorator_fn = last_decorator
+        # if autotuner is triton_dejavu, we can determine the last missing arguments
+        #  so we set the flag that the last args are stored
+        if hasattr(self._last_decorator_fn, "_need_last_args"):
+            self._last_decorator_fn._need_last_args = True
         if flag_print_debug:
             print(
                 f"[{__print_name__}] JITCache for Triton kernel {fn_name} is activated."

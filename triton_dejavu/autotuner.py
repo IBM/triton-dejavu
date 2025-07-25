@@ -211,16 +211,13 @@ class Autotuner(KernelInterface):
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
+        self._need_last_args = False
         self._last_complete_args = None
         self._timings = {}
         if triton_major_version >= 3:
             self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
-            self.benchmarking_stream = (
-                torch.cuda.Stream() if self.use_cuda_graph else None
-            )
         else:
             self.use_cuda_graph = False
-            self.benchmarking_stream = None
 
         self.use_bo = use_bo
         self.use_random_search = use_random_search
@@ -412,6 +409,13 @@ class Autotuner(KernelInterface):
             config.all_kwargs = lambda: _all_kwargs(config)
         current = dict(meta, **config.all_kwargs())
         full_nargs = {**self.nargs, **current}
+        
+        if triton_major_version >= 3:
+            benchmarking_stream = (
+                torch.cuda.Stream() if self.use_cuda_graph else None
+            )
+        else:
+            benchmarking_stream = None
 
         def kernel_call():
             if config.pre_hook:
@@ -428,7 +432,7 @@ class Autotuner(KernelInterface):
             kernel_call_obj = KernelEvalCall(
                 self.fn,
                 self.arg_names,
-                self.benchmarking_stream,
+                benchmarking_stream,
                 config,
                 kernel_call,
                 *args,
@@ -804,7 +808,8 @@ class Autotuner(KernelInterface):
                     f"<autotune:{self.best_config}>"
                 ).replace(" ", "")
             full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
-            self._last_complete_args = full_nargs
+            if self._need_last_args:
+                self._last_complete_args = full_nargs
             if config.pre_hook is not None:
                 config.pre_hook(full_nargs)
             if not hasattr(config, "all_kwargs"):
@@ -1071,8 +1076,6 @@ class ConfigSpace:
         # check for special parameters
         if hasattr(self, "num_ctas"):
             # check if other ctas are allowed
-            import torch
-
             capability = torch.cuda.get_device_capability()
             if capability[0] < 9:
                 self.num_ctas = [1]
