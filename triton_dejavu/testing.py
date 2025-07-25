@@ -584,6 +584,7 @@ def do_bench(
         )
         # import torch.multiprocessing as mp
         import multiprocessing as mp
+
         mp.set_start_method("spawn", force=True)
         manager = mp.Manager()
         return_dict = manager.dict({"ret": float("nan"), "stdout": "", "stderr": ""})

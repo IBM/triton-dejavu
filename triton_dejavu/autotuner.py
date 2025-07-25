@@ -409,11 +409,9 @@ class Autotuner(KernelInterface):
             config.all_kwargs = lambda: _all_kwargs(config)
         current = dict(meta, **config.all_kwargs())
         full_nargs = {**self.nargs, **current}
-        
+
         if triton_major_version >= 3:
-            benchmarking_stream = (
-                torch.cuda.Stream() if self.use_cuda_graph else None
-            )
+            benchmarking_stream = torch.cuda.Stream() if self.use_cuda_graph else None
         else:
             benchmarking_stream = None
 
