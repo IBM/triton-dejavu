@@ -24,8 +24,6 @@ import time
 import numpy as np
 import torch
 
-# import torch.multiprocessing as mp
-import multiprocessing as mp
 import io
 from collections import namedtuple
 import triton
@@ -411,9 +409,16 @@ def _do_bench_cudagraph(
         tb = traceback.format_exc()
         return_dict["e"] = f"Exception {e}; traceback: {tb}"
         print(tb)
+    del cache
     fn.cleanup()
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
+    if flag_print_debug_verbose:
+        free_m, total_m = torch.cuda.mem_get_info()
+        GB_u = 1024 * 1024 * 1024
+        print(
+            f"current memory: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. "
+        )
     if redirect_io:
         return_dict["stdout"] = sys.stdout.getvalue()
         return_dict["stderr"] = sys.stdout.getvalue()
@@ -577,6 +582,9 @@ def do_bench(
         print(
             f"current memory: {free_m/GB_u:.4f} GB free of total {total_m/GB_u:.4f} GB. "
         )
+        # import torch.multiprocessing as mp
+        import multiprocessing as mp
+
         mp.set_start_method("spawn", force=True)
         manager = mp.Manager()
         return_dict = manager.dict({"ret": float("nan"), "stdout": "", "stderr": ""})

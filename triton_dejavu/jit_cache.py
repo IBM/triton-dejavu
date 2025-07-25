@@ -42,7 +42,6 @@ __print_name__ = "triton-dejavu"
 
 
 class CacheLock:
-
     def __init__(self, id="unknown"):
         self.is_locked = False
         self.id = id
@@ -137,13 +136,16 @@ class PreparedKernel33:
             raise OutOfResources(
                 self.metadata.shared, self.dev_max_shared, "shared memory"
             )
-        self.module, self.function, self.n_regs, self.n_spills = (
-            driver.active.utils.load_binary(
-                self.kernel.name,
-                self.kernel.kernel,
-                self.kernel.metadata.shared,
-                self.device,
-            )
+        (
+            self.module,
+            self.function,
+            self.n_regs,
+            self.n_spills,
+        ) = driver.active.utils.load_binary(
+            self.kernel.name,
+            self.kernel.kernel,
+            self.kernel.metadata.shared,
+            self.device,
         )
         if flag_print_debug_verbose:
             print(
@@ -267,13 +269,16 @@ class PreparedKernel32:
             raise OutOfResources(
                 self.metadata.shared, self.dev_max_shared, "shared memory"
             )
-        self.module, self.function, self.n_regs, self.n_spills = (
-            driver.active.utils.load_binary(
-                self.kernel.name,
-                self.kernel.kernel,
-                self.kernel.metadata.shared,
-                self.device,
-            )
+        (
+            self.module,
+            self.function,
+            self.n_regs,
+            self.n_spills,
+        ) = driver.active.utils.load_binary(
+            self.kernel.name,
+            self.kernel.kernel,
+            self.kernel.metadata.shared,
+            self.device,
         )
         if flag_print_debug_verbose:
             print(
@@ -320,7 +325,6 @@ class PreparedKernel32:
 
 
 class JitCache(KernelInterface):
-
     def __init__(
         self,
         fn,
@@ -366,6 +370,10 @@ class JitCache(KernelInterface):
         fn_name = fnsl[1][:-1]
         self._jit_fn = last_fn
         self._last_decorator_fn = last_decorator
+        # if autotuner is triton_dejavu, we can determine the last missing arguments
+        #  so we set the flag that the last args are stored
+        if hasattr(self._last_decorator_fn, "_need_last_args"):
+            self._last_decorator_fn._need_last_args = True
         if flag_print_debug:
             print(
                 f"[{__print_name__}] JITCache for Triton kernel {fn_name} is activated."
@@ -462,9 +470,9 @@ class JitCache(KernelInterface):
                     kwargs[config_arg] = self._last_decorator_fn._last_complete_args[
                         config_arg
                     ]
-                    autotuner_configs_dict[config_arg] = (
-                        self._last_decorator_fn._last_complete_args[config_arg]
-                    )
+                    autotuner_configs_dict[
+                        config_arg
+                    ] = self._last_decorator_fn._last_complete_args[config_arg]
             else:
                 raise RuntimeError(
                     f"[{__print_name__}] ERROR: cannot determine autotune results."
@@ -567,9 +575,9 @@ class JitCache(KernelInterface):
                     kwargs[config_arg] = self._last_decorator_fn._last_complete_args[
                         config_arg
                     ]
-                    autotuner_configs_dict[config_arg] = (
-                        self._last_decorator_fn._last_complete_args[config_arg]
-                    )
+                    autotuner_configs_dict[
+                        config_arg
+                    ] = self._last_decorator_fn._last_complete_args[config_arg]
             else:
                 raise RuntimeError(
                     f"[{__print_name__}] ERROR: cannot determine autotune results."
