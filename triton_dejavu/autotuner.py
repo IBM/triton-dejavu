@@ -1104,6 +1104,7 @@ class ConfigSpace:
                 if not condition(kwarg):
                     append = False
                     self._num_of_invalid_configs += 1
+                    break
             if append:
                 kwarg_lists.append(kwarg)
         # then cross product with all others
