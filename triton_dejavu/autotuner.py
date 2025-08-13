@@ -1036,8 +1036,8 @@ class ConfigSpace:
                             with the generated kwarg dictionary. Only configuration combinations where all functions
                             evaluate to True are passed to the autotuner.
     :ivar conditions: a list of functions to be evaluated during configuration creation. The functions are called
-                      with the generated Triton Config object and after kwarg_conditions are applied. 
-                      I.e. kwargs are now arg.kwargs. Only configuration combinations where all functions evaluate 
+                      with the generated Triton Config object and after kwarg_conditions are applied.
+                      I.e. kwargs are now arg.kwargs. Only configuration combinations where all functions evaluate
                       to True are passed to the autotuner.
     :ivar configuration_args: keyword arguments (so name=value, ...) for triton.Config parameters. For example, this are usually num_warps,
                               num_stages, num_ctas. Depending on version or platform, such as enable_warp_specialization
