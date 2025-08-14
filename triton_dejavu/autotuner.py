@@ -208,6 +208,9 @@ class Autotuner(KernelInterface):
         self.metadata_key = metadata_key
 
         self.fn = fn
+        self.triton_fn = fn
+        while not 'JITFunction' in str(self.triton_fn):
+            self.triton_fn = self.triton_fn.fn
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
@@ -277,13 +280,13 @@ class Autotuner(KernelInterface):
         if custom_data_storage:
             global_dejavu_storage.add_cache_data_path_prefix(
                 custom_data_storage,
-                fn,
+                self.triton_fn,
                 self.configs_hash,
                 self.key_hash,
                 self._param_hash,
             )
         self.cache = global_dejavu_storage.restore_autotuner_cache(
-            fn,
+            self.triton_fn,
             self.configs_hash,
             self.key_hash,
             self._param_hash,
@@ -308,12 +311,12 @@ class Autotuner(KernelInterface):
 
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
             self.configs = global_dejavu_storage.get_used_configs(
-                fn, self.configs_hash, self.key_hash, self._param_hash
+                self.triton_fn, self.configs_hash, self.key_hash, self._param_hash
             )
             # important, don't update configs_hash
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
+                    f"[triton-dejavu] restricted configs for {str(self.triton_fn)} to {len(self.configs)} used in the cache."
                 )
 
         self.fallback_heuristic = fallback_heuristic
@@ -782,7 +785,7 @@ class Autotuner(KernelInterface):
             if not used_cached_result:
                 global_dejavu_storage.add_autotuner_cache(
                     self.cache,
-                    self.fn,
+                    self.triton_fn,
                     self.configs_hash,
                     self.key_hash,
                     self._param_hash,
