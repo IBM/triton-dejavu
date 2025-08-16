@@ -209,7 +209,7 @@ class Autotuner(KernelInterface):
 
         self.fn = fn
         self.triton_fn = fn
-        while not 'JITFunction' in str(self.triton_fn):
+        while not "JITFunction" in str(self.triton_fn):
             self.triton_fn = self.triton_fn.fn
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
@@ -1174,7 +1174,9 @@ class ConfigSpace:
             # global AND
             if not kwarg_condition(kwarg):
                 if flag_print_debug_verbose:
-                    print(f"config {kwarg} is not allowed (violated kwarg_condition {i})!")
+                    print(
+                        f"config {kwarg} is not allowed (violated kwarg_condition {i})!"
+                    )
                 return False
         cc = self.convert_BohbConfig_to_Triton(bohb_config)
         for i, condition in enumerate(self.conditions):
