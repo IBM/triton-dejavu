@@ -126,7 +126,7 @@ class Autotuner(KernelInterface):
         else:
             self.config_space = None
             if not configs:
-                self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
+                self.configs = [Config({}, num_warps=4, num_stages=2)]
             else:
                 self.configs = configs
         # TODO: is pre-hook captured?
@@ -1101,6 +1101,7 @@ class ConfigSpace:
         # first generate cross product of kwargs
         ks = list(self.kwargs.keys())
         vs = list(self.kwargs.values())
+        self._num_of_invalid_configs = 0
         vs_product = list(itertools.product(*vs))
         kwarg_lists_complete = []
         for cur_combination in vs_product:
