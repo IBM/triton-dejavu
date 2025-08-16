@@ -1160,27 +1160,28 @@ class ConfigSpace:
 
         config_space_dict = {}
         config_space_dict.update(self.kwargs)
-        # TODO: make dynamic
-        # config_space_dict["num_warps"] = self.num_warps
-        # config_space_dict["num_stages"] = self.num_stages
-        # config_space_dict["num_ctas"] = self.num_ctas
         for p in __triton_config_parameter_names__:
             config_space_dict[p] = getattr(self, p)
         cs = BohbConfigurationSpace(config_space_dict)
         return cs
 
     def is_allowed_BohbConfig(self, bohb_config) -> bool:
-        # kwarg = bohb_config
         kwarg = {}
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
             kwarg[k] = bohb_config_dict[k]
-        # print(kwarg)
-        for i, condition in enumerate(self.kwarg_conditions):
+        for i, kwarg_condition in enumerate(self.kwarg_conditions):
             # global AND
-            if not condition(kwarg):
+            if not kwarg_condition(kwarg):
                 if flag_print_debug_verbose:
-                    print(f"config {kwarg} is not allowed (violated condition {i})!")
+                    print(f"config {kwarg} is not allowed (violated kwarg_condition {i})!")
+                return False
+        cc = self.convert_BohbConfig_to_Triton(bohb_config)
+        for i, condition in enumerate(self.conditions):
+            # global AND
+            if not condition(cc):
+                if flag_print_debug_verbose:
+                    print(f"config {cc} is not allowed (violated condition {i})!")
                 return False
         return True
 
