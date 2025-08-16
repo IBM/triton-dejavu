@@ -432,6 +432,7 @@ class Autotuner(KernelInterface):
         try:
             kernel_call_obj = KernelEvalCall(
                 self.fn,
+                self.triton_fn,
                 self.arg_names,
                 benchmarking_stream,
                 config,

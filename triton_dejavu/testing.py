@@ -173,6 +173,7 @@ class KernelEvalCall:
     def __init__(
         self,
         fn,
+        triton_fn,
         arg_names,
         benchmarking_stream,
         cur_config,
@@ -180,8 +181,8 @@ class KernelEvalCall:
         *args,
         **current,
     ):
-        self.fn = fn
-        # self.args = args
+        self.fn = fn  # next function, may be another decorator
+        self.triton_fn = triton_fn  # actual triton function
         # Necessary to avoid persistent RuntimeErrors
         self.args = [a.clone() if isinstance(a, torch.Tensor) else a for a in args]
         self.current = current
@@ -238,13 +239,41 @@ class KernelEvalCall:
         compile_start = time.time()
         kernel = self.fn.run(*self.args, **self.current)
         compile_end = time.time()
-        (
-            bound_args,
-            sig_and_spec,
-            constexpr_vals,
-            non_constexpr_vals,
-            excess_kwargs,
-        ) = self.fn.binder(*self.args, **self.current)
+        # apply heuristics
+        if self.fn != self.triton_fn:
+            cur_fn = self.fn
+            while cur_fn != self.triton_fn:
+                print(cur_fn)
+                if "Heuristics" in str(cur_fn):
+                    # apply heuristics
+                    if flag_print_debug_verbose:
+                        print(f"[triton-dejavu] Applying heuristics {cur_fn}.")
+                    for v, heur in cur_fn.values.items():
+                        self.current[v] = heur(
+                            {**dict(zip(self.arg_names, self.args)), **self.current}
+                        )
+                if hasattr(cur_fn, "fn"):
+                    cur_fn = cur_fn.fn
+                else:
+                    break
+        if hasattr(self.triton_fn, "binder"):
+            # triton versions before 3.3
+            (
+                bound_args,
+                sig_and_spec,
+                constexpr_vals,
+                non_constexpr_vals,
+                excess_kwargs,
+            ) = self.triton_fn.binder(*self.args, **self.current)
+        else:
+            # triton 3.3+
+            from triton.runtime.driver import driver
+
+            device = driver.active.get_current_device()
+            kernel_cache, target, backend, binder = self.triton_fn.device_caches[device]
+            bound_args, specialization, options = binder(*self.args, **self.current)
+            # FIXME
+            non_constexpr_vals = bound_args
         bind_end = time.time()
         self._jit_was_triggered = True
 
@@ -272,8 +301,8 @@ class KernelEvalCall:
             grid_2,
             kernel,
             launch_metadata,
-            self.fn.CompiledKernel.launch_enter_hook,
-            self.fn.CompiledKernel.launch_exit_hook,
+            self.triton_fn.CompiledKernel.launch_enter_hook,
+            self.triton_fn.CompiledKernel.launch_exit_hook,
             *non_constexpr_vals,
         )
         wrapper_end = time.time()
