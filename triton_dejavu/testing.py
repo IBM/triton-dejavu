@@ -256,6 +256,15 @@ class KernelEvalCall:
                     cur_fn = cur_fn.fn
                 else:
                     break
+        if callable(self.current["grid"]):
+            grid = self.current["grid"](self.current)
+        else:
+            grid = self.current["grid"]
+        grid_size = len(grid)
+        grid_0 = grid[0]
+        grid_1 = grid[1] if grid_size > 1 else 1
+        grid_2 = grid[2] if grid_size > 2 else 1
+ 
         if hasattr(self.triton_fn, "binder"):
             # triton versions before 3.3
             (
@@ -265,6 +274,21 @@ class KernelEvalCall:
                 non_constexpr_vals,
                 excess_kwargs,
             ) = self.triton_fn.binder(*self.args, **self.current)
+            bind_end = time.time()
+
+            launch_metadata = kernel.launch_metadata(
+                grid, self.benchmarking_stream, *non_constexpr_vals
+            )
+            self.compiled_kernel = CompiledKernelRun(
+                grid_0,
+                grid_1,
+                grid_2,
+                kernel,
+                launch_metadata,
+                self.triton_fn.CompiledKernel.launch_enter_hook,
+                self.triton_fn.CompiledKernel.launch_exit_hook,
+                *non_constexpr_vals,
+            )
         else:
             # triton 3.3+
             from triton.runtime.driver import driver
@@ -272,39 +296,24 @@ class KernelEvalCall:
             device = driver.active.get_current_device()
             kernel_cache, target, backend, binder = self.triton_fn.device_caches[device]
             bound_args, specialization, options = binder(*self.args, **self.current)
-            # FIXME
-            non_constexpr_vals = bound_args
-        bind_end = time.time()
+            bind_end = time.time()
+            
+            launch_metadata = kernel.launch_metadata(
+                grid, self.benchmarking_stream, *bound_args.values()
+            )
+            self.compiled_kernel = CompiledKernelRun(
+                grid_0,
+                grid_1,
+                grid_2,
+                kernel,
+                launch_metadata,
+                self.triton_fn.CompiledKernel.launch_enter_hook,
+                self.triton_fn.CompiledKernel.launch_exit_hook,
+                *bound_args.values(),
+            )
+
         self._jit_was_triggered = True
 
-        # device = triton.runtime.driver.active.get_current_device()
-        # stream = triton.runtime.driver.active.get_current_stream(device)
-
-        if callable(self.current["grid"]):
-            grid = self.current["grid"](self.current)
-        else:
-            grid = self.current["grid"]
-        launch_metadata = kernel.launch_metadata(
-            grid, self.benchmarking_stream, *non_constexpr_vals
-        )
-
-        grid_size = len(grid)
-        grid_0 = grid[0]
-        grid_1 = grid[1] if grid_size > 1 else 1
-        grid_2 = grid[2] if grid_size > 2 else 1
-
-        # kernel.run(grid_0, grid_1, grid_2, stream, kernel.function, kernel.packed_metadata, launch_metadata,
-        #            self.fn.CompiledKernel.launch_enter_hook, self.fn.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
-        self.compiled_kernel = CompiledKernelRun(
-            grid_0,
-            grid_1,
-            grid_2,
-            kernel,
-            launch_metadata,
-            self.triton_fn.CompiledKernel.launch_enter_hook,
-            self.triton_fn.CompiledKernel.launch_exit_hook,
-            *non_constexpr_vals,
-        )
         wrapper_end = time.time()
         compile_time = compile_end - compile_start
         bind_time = bind_end - compile_end

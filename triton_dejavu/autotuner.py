@@ -687,6 +687,9 @@ class Autotuner(KernelInterface):
                 total_trials += 1
 
         self.run_id += 1
+        assert best_config is not None, (
+            f"[triton-dejavu] No best config found, timings: {timings}; failed configs: {failed_configs}."
+        )
         return timings, best_config
 
     def run(self, *args, **kwargs):
