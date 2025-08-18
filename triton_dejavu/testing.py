@@ -264,7 +264,7 @@ class KernelEvalCall:
         grid_0 = grid[0]
         grid_1 = grid[1] if grid_size > 1 else 1
         grid_2 = grid[2] if grid_size > 2 else 1
- 
+
         if hasattr(self.triton_fn, "binder"):
             # triton versions before 3.3
             (
@@ -297,7 +297,7 @@ class KernelEvalCall:
             kernel_cache, target, backend, binder = self.triton_fn.device_caches[device]
             bound_args, specialization, options = binder(*self.args, **self.current)
             bind_end = time.time()
-            
+
             launch_metadata = kernel.launch_metadata(
                 grid, self.benchmarking_stream, *bound_args.values()
             )
