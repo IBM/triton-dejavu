@@ -47,6 +47,11 @@ if flag_print_debug:
 cuda_version = None
 rocm_version = None
 
+from triton import __version__ as triton_version
+triton_major_version = int(triton_version.split(".")[0])
+triton_minor_version = int(triton_version.split(".")[1])
+triton_version_float = triton_major_version + float(triton_minor_version / 10)
+
 
 def _get_cuda_version():
     """

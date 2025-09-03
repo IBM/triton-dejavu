@@ -19,9 +19,6 @@ import sys
 import os
 from triton.runtime.cache import (
     FileCacheManager,
-    default_cache_dir,
-    default_dump_dir,
-    default_override_dir,
 )
 
 from .dejavu_utilities import create_dir_if_not_exist_recursive
@@ -45,6 +42,12 @@ class CustomCacheManager(FileCacheManager):
     """
 
     def __init__(self, key, override=False, dump=False):
+        # FIXME: only supported for Triton <= 3.3
+        from triton.runtime.cache import (
+            default_cache_dir,
+            default_dump_dir,
+            default_override_dir,
+        )
         self.key = key
         self.lock_path = None
         if dump:

@@ -32,6 +32,7 @@ from .dejavu_utilities import (
     flag_print_debug_verbose,
     get_storage_prefix,
     get_storage_tag,
+    triton_version_float,
 )
 from triton.runtime.jit import DependenciesFinder
 
@@ -131,7 +132,10 @@ def _create_config_args(v):
 
 def _get_weak_fn_hash(fn: triton.JITFunction):
     # we are not a compiler, just an autotuner match, we don't need globals
-    dependencies_finder = DependenciesFinder(name=fn.__name__, globals={}, src=fn.src)
+    if triton_version_float <= 3.3:
+        dependencies_finder = DependenciesFinder(name=fn.__name__, globals={}, src=fn.src)
+    elif triton_version_float >= 3.4:
+        dependencies_finder = DependenciesFinder(name=fn.__name__, globals={}, src=fn.src, nonlocals={})
     dependencies_finder.visit(fn.parse())
     return dependencies_finder.ret
 

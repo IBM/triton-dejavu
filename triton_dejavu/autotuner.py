@@ -35,10 +35,6 @@ import copy
 from triton_dejavu.testing import do_bench, KernelEvalCall
 from triton import KernelInterface, Config, OutOfResources, CompilationError
 
-from triton import __version__ as triton_version
-
-triton_major_version = int(triton_version.split(".")[0])
-
 from triton_dejavu.dejavu_storage import (
     global_dejavu_storage,
     get_config_list_hash,
@@ -53,6 +49,7 @@ from triton_dejavu.dejavu_utilities import (
     flag_print_autotuning,
     flag_print_debug_verbose,
     get_type_dict,
+    triton_major_version,
 )
 from triton_dejavu.cache_manager import set_triton_cache_manager
 from triton_dejavu.utils import global_metadata_store
