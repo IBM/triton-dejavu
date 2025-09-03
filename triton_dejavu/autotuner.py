@@ -126,7 +126,7 @@ class Autotuner(KernelInterface):
         else:
             self.config_space = None
             if not configs:
-                self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
+                self.configs = [Config({}, num_warps=4, num_stages=2)]
             else:
                 self.configs = configs
         # TODO: is pre-hook captured?
@@ -208,6 +208,9 @@ class Autotuner(KernelInterface):
         self.metadata_key = metadata_key
 
         self.fn = fn
+        self.triton_fn = fn
+        while not "JITFunction" in str(self.triton_fn):
+            self.triton_fn = self.triton_fn.fn
         self.base_fn = fn
         while not inspect.isfunction(self.base_fn):
             self.base_fn = self.base_fn.fn
@@ -277,13 +280,13 @@ class Autotuner(KernelInterface):
         if custom_data_storage:
             global_dejavu_storage.add_cache_data_path_prefix(
                 custom_data_storage,
-                fn,
+                self.triton_fn,
                 self.configs_hash,
                 self.key_hash,
                 self._param_hash,
             )
         self.cache = global_dejavu_storage.restore_autotuner_cache(
-            fn,
+            self.triton_fn,
             self.configs_hash,
             self.key_hash,
             self._param_hash,
@@ -308,12 +311,12 @@ class Autotuner(KernelInterface):
 
         if os.environ.get("TRITON_DEJAVU_USE_ONLY_RESTORED", "0") == "1":
             self.configs = global_dejavu_storage.get_used_configs(
-                fn, self.configs_hash, self.key_hash, self._param_hash
+                self.triton_fn, self.configs_hash, self.key_hash, self._param_hash
             )
             # important, don't update configs_hash
             if flag_print_debug:
                 print(
-                    f"[triton-dejavu] restricted configs for {str(fn)} to {len(self.configs)} used in the cache."
+                    f"[triton-dejavu] restricted configs for {str(self.triton_fn)} to {len(self.configs)} used in the cache."
                 )
 
         self.fallback_heuristic = fallback_heuristic
@@ -429,6 +432,7 @@ class Autotuner(KernelInterface):
         try:
             kernel_call_obj = KernelEvalCall(
                 self.fn,
+                self.triton_fn,
                 self.arg_names,
                 benchmarking_stream,
                 config,
@@ -683,6 +687,9 @@ class Autotuner(KernelInterface):
                 total_trials += 1
 
         self.run_id += 1
+        assert (
+            best_config is not None
+        ), f"[triton-dejavu] No best config found, timings: {timings}; failed configs: {failed_configs}."
         return timings, best_config
 
     def run(self, *args, **kwargs):
@@ -782,7 +789,7 @@ class Autotuner(KernelInterface):
             if not used_cached_result:
                 global_dejavu_storage.add_autotuner_cache(
                     self.cache,
-                    self.fn,
+                    self.triton_fn,
                     self.configs_hash,
                     self.key_hash,
                     self._param_hash,
@@ -1035,6 +1042,10 @@ class ConfigSpace:
     :ivar kwarg_conditions: a list of functions to be evaluated during configuration creation. The functions are called
                             with the generated kwarg dictionary. Only configuration combinations where all functions
                             evaluate to True are passed to the autotuner.
+    :ivar conditions: a list of functions to be evaluated during configuration creation. The functions are called
+                      with the generated Triton Config object and after kwarg_conditions are applied.
+                      I.e. kwargs are now arg.kwargs. Only configuration combinations where all functions evaluate
+                      to True are passed to the autotuner.
     :ivar configuration_args: keyword arguments (so name=value, ...) for triton.Config parameters. For example, this are usually num_warps,
                               num_stages, num_ctas. Depending on version or platform, such as enable_warp_specialization
                               or maxnreg will be used as well.
@@ -1044,11 +1055,14 @@ class ConfigSpace:
         self,
         kwargs_with_lists,
         kwarg_conditions=None,
+        conditions=None,
         pre_hook=None,
         **configuration_args,
     ):
         if kwarg_conditions is None:
             kwarg_conditions = []
+        if conditions is None:
+            conditions = []
         self.kwargs = kwargs_with_lists
         self.kwarg_keys = list(kwargs_with_lists.keys())
         self.kwarg_types = get_type_dict(
@@ -1056,6 +1070,7 @@ class ConfigSpace:
         )
         self.pre_hook = pre_hook
         self.kwarg_conditions = kwarg_conditions
+        self.conditions = conditions
         self._num_of_invalid_configs = 0
 
         # adapt to current triton platform
@@ -1090,15 +1105,16 @@ class ConfigSpace:
         # first generate cross product of kwargs
         ks = list(self.kwargs.keys())
         vs = list(self.kwargs.values())
+        self._num_of_invalid_configs = 0
         vs_product = list(itertools.product(*vs))
         kwarg_lists_complete = []
         for cur_combination in vs_product:
             nd = dict(zip(ks, cur_combination))
             kwarg_lists_complete.append(nd)
-        # check for conditions
+        # check for kwarg_conditions (first filter)
         kwarg_lists = []
         for kwarg in kwarg_lists_complete:
-            append = True
+            append = True  # so empty condition list will append all
             for condition in self.kwarg_conditions:
                 # global AND
                 if not condition(kwarg):
@@ -1107,12 +1123,13 @@ class ConfigSpace:
                     break
             if append:
                 kwarg_lists.append(kwarg)
-        # then cross product with all others
+        # cross product with all others
         list_of_list_of_config_params = [
             getattr(self, p) for p in __triton_config_parameter_names__
         ]
         config_product = list(itertools.product(*list_of_list_of_config_params))
         all_product = list(itertools.product(kwarg_lists, config_product))
+        # create list of Triton.Config objects
         config_list = []
         for cc in all_product:
             config_params = {}
@@ -1124,38 +1141,53 @@ class ConfigSpace:
                 **config_params,
             )
             config_list.append(nc)
+        # then, check for conditions (2nd filter)
+        config_list_filtered = []
+        for cc in config_list:
+            append = True  # so empty condition list will append all
+            for condition in self.conditions:
+                # global AND
+                if not condition(cc):
+                    append = False
+                    self._num_of_invalid_configs += 1
+                    break
+            if append:
+                config_list_filtered.append(cc)
         if flag_print_debug:
             print(
-                f"[triton-dejavu] generated {len(config_list)} configurations out of {str(self)}."
+                f"[triton-dejavu] generated {len(config_list_filtered)} configurations out of {str(self)}."
             )
-        return config_list
+        return config_list_filtered
 
     def get_BohbConfigSpace(self):
         from ConfigSpace import ConfigurationSpace as BohbConfigurationSpace
 
         config_space_dict = {}
         config_space_dict.update(self.kwargs)
-        # TODO: make dynamic
-        # config_space_dict["num_warps"] = self.num_warps
-        # config_space_dict["num_stages"] = self.num_stages
-        # config_space_dict["num_ctas"] = self.num_ctas
         for p in __triton_config_parameter_names__:
             config_space_dict[p] = getattr(self, p)
         cs = BohbConfigurationSpace(config_space_dict)
         return cs
 
     def is_allowed_BohbConfig(self, bohb_config) -> bool:
-        # kwarg = bohb_config
         kwarg = {}
         bohb_config_dict = dict(bohb_config)
         for k in self.kwarg_keys:
             kwarg[k] = bohb_config_dict[k]
-        # print(kwarg)
-        for i, condition in enumerate(self.kwarg_conditions):
+        for i, kwarg_condition in enumerate(self.kwarg_conditions):
             # global AND
-            if not condition(kwarg):
+            if not kwarg_condition(kwarg):
                 if flag_print_debug_verbose:
-                    print(f"config {kwarg} is not allowed (violated condition {i})!")
+                    print(
+                        f"config {kwarg} is not allowed (violated kwarg_condition {i})!"
+                    )
+                return False
+        cc = self.convert_BohbConfig_to_Triton(bohb_config)
+        for i, condition in enumerate(self.conditions):
+            # global AND
+            if not condition(cc):
+                if flag_print_debug_verbose:
+                    print(f"config {cc} is not allowed (violated condition {i})!")
                 return False
         return True
 
