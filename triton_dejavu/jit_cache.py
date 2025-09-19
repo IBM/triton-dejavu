@@ -27,15 +27,12 @@ from triton import KernelInterface
 from triton.runtime.driver import driver
 from triton.runtime.autotuner import OutOfResources
 
-from triton import __version__ as triton_version
-
-triton_major_version = int(triton_version.split(".")[0])
-triton_minor_version = int(triton_version.split(".")[1])
-triton_version_float = triton_major_version + float(triton_minor_version / 10)
-
 from triton_dejavu.dejavu_utilities import (
     flag_print_debug,
     flag_print_debug_verbose,
+    triton_major_version,
+    triton_minor_version,
+    triton_version_float,
 )
 
 __print_name__ = "triton-dejavu"
